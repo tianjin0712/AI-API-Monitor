@@ -31,4 +31,5 @@ async-trait = "0.1.92"
 thiserror = "2.0.20"
 uuid = { version = "1.24.0", features = ["v4"] }
 url = "2.5.8"
+tauri-plugin-notification = "2.3.3"
 

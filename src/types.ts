@@ -71,7 +71,7 @@ export interface DeleteResult {
 // ---- V0.3 DIY UI ----
 
 /** Widget 类型（Dashboard 区块） */
-export type WidgetType = "providers" | "summary" | "cost";
+export type WidgetType = "providers" | "summary" | "cost" | "trend";
 
 /** Dashboard 上的一个 Widget */
 export interface DashboardWidget {
@@ -84,4 +84,22 @@ export interface DashboardWidget {
 export interface Layout {
   theme: "dark" | "light";
   widgets: DashboardWidget[];
+}
+
+// ---- V0.5 高级统计 ----
+
+/** 单日用量（历史序列数据点） */
+export interface DailyUsage {
+  date: string;
+  tokens: number;
+  cost: number;
+  balance: number | null;
+}
+
+/** 消耗预测 */
+export interface Prediction {
+  dailyCostAvg: number;
+  balance: number | null;
+  daysLeft: number | null;
+  exhaustedDate: string | null;
 }

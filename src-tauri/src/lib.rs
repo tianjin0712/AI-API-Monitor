@@ -20,6 +20,7 @@ pub const MAIN_WINDOW: &str = "main";
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // 初始化 SQLite 数据库（app data 目录）
             let data_dir = app.path().app_data_dir()?;
@@ -28,6 +29,7 @@ pub fn run() {
                 .expect("failed to open database");
             app.manage(db);
             app.manage(Arc::new(ProviderManager::new()));
+            app.manage(commands::AlertState::default());
 
             // 启动时执行旧凭据迁移（幂等，V3）；失败数写入 settings 供前端提示
             match settings::migrate_legacy_credentials(app.state::<Db>().inner()) {
@@ -75,6 +77,8 @@ pub fn run() {
             commands::get_migration_status,
             commands::get_layout,
             commands::set_layout,
+            commands::get_usage_history,
+            commands::get_prediction,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

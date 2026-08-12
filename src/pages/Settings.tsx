@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type {
   DeleteResult,
@@ -53,6 +53,18 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [migrationFailed, setMigrationFailed] = useState(0);
+  const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const typeMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const closeTypeMenu = (event: PointerEvent) => {
+      if (!typeMenuRef.current?.contains(event.target as Node)) {
+        setTypeMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeTypeMenu);
+    return () => document.removeEventListener("pointerdown", closeTypeMenu);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -182,27 +194,49 @@ export default function Settings() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </label>
-          <label className="text-[12px] text-text-secondary">
+          <div className="text-[12px] text-text-secondary" ref={typeMenuRef}>
             类型
-            <select
-              className="input mt-1"
-              value={form.providerType}
-              onChange={(e) => {
-                const t = e.target.value;
-                setForm({
-                  ...form,
-                  providerType: t,
-                  apiUrl: TYPE_PRESETS[t] ?? form.apiUrl,
-                });
-              }}
-            >
-              {types.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
+            <div className="provider-picker mt-1">
+              <button
+                type="button"
+                className="provider-picker-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={typeMenuOpen}
+                onClick={() => setTypeMenuOpen((open) => !open)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") setTypeMenuOpen(false);
+                }}
+              >
+                <span>{form.providerType}</span>
+                <span className={`provider-picker-chevron ${typeMenuOpen ? "is-open" : ""}`}>
+                  ⌄
+                </span>
+              </button>
+              {typeMenuOpen && (
+                <div className="provider-picker-menu" role="listbox" aria-label="Provider 类型">
+                  {types.map((type) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={type === form.providerType}
+                      className="provider-picker-option"
+                      key={type}
+                      onClick={() => {
+                        setForm({
+                          ...form,
+                          providerType: type,
+                          apiUrl: TYPE_PRESETS[type] ?? form.apiUrl,
+                        });
+                        setTypeMenuOpen(false);
+                      }}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
           <label className="col-span-2 text-[12px] text-text-secondary">
             Base URL
             {NO_API_KEY_TYPES.has(form.providerType) ? (
@@ -377,7 +411,8 @@ export default function Settings() {
                 setAlwaysOnTop(!v);
               }
             }}
-            className="h-4 w-4 accent-(--color-accent)"
+            className="round-checkbox"
+            aria-label="窗口保持置顶"
           />
         </label>
       </section>

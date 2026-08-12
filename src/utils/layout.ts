@@ -5,9 +5,10 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "w-providers", type: "providers", visible: true },
   { id: "w-summary", type: "summary", visible: true },
   { id: "w-cost", type: "cost", visible: true },
+  { id: "w-trend", type: "trend", visible: true },
 ];
 
-const VALID_TYPES = ["providers", "summary", "cost"];
+const VALID_TYPES = ["providers", "summary", "cost", "trend"];
 
 /** 解析后端布局 JSON；无效/缺失时回退默认布局（V0.3） */
 export function parseWidgets(

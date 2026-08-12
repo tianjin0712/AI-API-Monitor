@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import ProviderCard from "../components/ProviderCard";
+import TrendWidget from "../components/TrendWidget";
 import { DEFAULT_WIDGETS } from "../utils/layout";
 import type {
   DashboardWidget,
@@ -221,6 +222,8 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
         <SummaryWidget providers={providers} usages={usages} />
       ) : w.type === "cost" ? (
         <CostWidget usages={usages} />
+      ) : w.type === "trend" ? (
+        <TrendWidget providers={providers} />
       ) : (
         <div className="flex flex-col gap-3">
           {providers.length === 0 ? (
@@ -296,7 +299,9 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
                 ? "账户列表"
                 : w.type === "summary"
                   ? "今日汇总"
-                  : "费用概览"}
+                  : w.type === "cost"
+                    ? "费用概览"
+                    : "消耗趋势"}
             </span>
           </div>
           <button

@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  DailyUsage,
   DeleteResult,
+  Prediction,
   ProviderConfig,
   ProviderUsage,
   RefreshResult,
@@ -52,4 +54,10 @@ export const api = {
   // ---- V0.3 DIY UI ----
   getLayout: () => invoke<string | null>("get_layout"),
   setLayout: (layout: string) => invoke<void>("set_layout", { layout }),
+
+  // ---- V0.5 高级统计 ----
+  getUsageHistory: (providerId?: number | null, days?: number) =>
+    invoke<DailyUsage[]>("get_usage_history", { providerId, days }),
+  getPrediction: (providerId: number) =>
+    invoke<Prediction | null>("get_prediction", { providerId }),
 };

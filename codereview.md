@@ -395,6 +395,22 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 6：V0.5 高级统计（提交 `（待提交）`）
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| Token 历史 / 消耗趋势 | ✅ 已实现 | `get_usage_history` 命令（按日序列，provider 可空、days≤365）；趋势 Widget（SVG 折线，Token/费用切换 + 账户下拉） |
+| 费用预测 | ✅ 已实现 | `get_prediction`：近 7 天日均费用 + 当前余额 → 预计剩余天数/耗尽日期（mission.md §13 公式） |
+| 自动提醒 | ✅ 已实现 | 额度阈值（<30% 黄 / <10% 红，边界 30%/10% 属正常/警告）；refresh 后 `check_alerts` 级别提升才发系统通知（tauri-plugin-notification）、恢复重置；`alert_level_thresholds` 边界测试 |
+| 前端集成 | ✅ 已实现 | 默认布局新增 trend Widget；编辑模式可拖拽/隐藏；布局校验白名单加入 trend |
+
+### 测试状态更新
+
+- `cargo test`：**40 passed / 0 failed**（新增 alert_level_thresholds）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。

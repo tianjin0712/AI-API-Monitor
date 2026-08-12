@@ -60,8 +60,10 @@ pub fn supported_provider_types(manager: State<'_, Arc<ProviderManager>>) -> Vec
 /// 立即刷新指定 Provider 并记录当日用量。
 #[tauri::command]
 pub async fn refresh_provider(
+    app: AppHandle,
     db: State<'_, Db>,
     manager: State<'_, Arc<ProviderManager>>,
+    alerts: State<'_, AlertState>,
     id: i64,
 ) -> Result<ProviderUsage, AppError> {
     let provider: ProviderConfig = settings::list_providers(&db)?
@@ -71,14 +73,17 @@ pub async fn refresh_provider(
     let mut usage = fetch_usage(manager.inner().as_ref(), &provider).await?;
     usage.provider_id = Some(provider.id);
     record_usage(&db, &provider, &usage)?;
+    check_alerts(&app, &alerts, &provider, &usage);
     Ok(usage)
 }
 
 /// 立即刷新全部启用的 Provider，返回逐账户结果（含失败原因，修复 P1 静默丢弃）。
 #[tauri::command]
 pub async fn refresh_all(
+    app: AppHandle,
     db: State<'_, Db>,
     manager: State<'_, Arc<ProviderManager>>,
+    alerts: State<'_, AlertState>,
 ) -> Result<Vec<RefreshResult>, AppError> {
     use std::sync::Arc as StdArc;
     // P2：受控并发（最多 3 个同时请求），避免慢账户串行阻塞全部结果
@@ -130,7 +135,8 @@ pub async fn refresh_all(
                     result.error = Some(format!("记录用量失败: {e}"));
                 } else {
                     result.success = true;
-                    result.usage = Some(usage);
+                    result.usage = Some(usage.clone());
+                    check_alerts(&app, &alerts, &provider, &usage);
                 }
             }
             Err(e) => {
@@ -172,6 +178,154 @@ pub fn get_migration_status(db: State<'_, Db>) -> Option<u64> {
         .and_then(|s| s.parse().ok())
 }
 
+// ---- V0.5 高级统计 ----
+
+/// 单日用量（历史序列数据点）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyUsage {
+    pub date: String, // YYYY-MM-DD
+    pub tokens: u64,
+    pub cost: f64,
+    pub balance: Option<f64>,
+}
+
+/// 查询历史用量序列（按 provider，可空=全部；days 默认 30，上限 365）。
+#[tauri::command]
+pub fn get_usage_history(
+    db: State<'_, Db>,
+    provider_id: Option<i64>,
+    days: Option<u64>,
+) -> Result<Vec<DailyUsage>, AppError> {
+    let days = days.unwrap_or(30).clamp(1, 365);
+    db.with_conn(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT date, tokens, cost, balance FROM usage_history
+             WHERE (?1 IS NULL OR provider_id = ?1)
+               AND date >= date('now', ?2)
+             ORDER BY date",
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![provider_id, format!("-{days} days")],
+            |row| {
+                Ok(DailyUsage {
+                    date: row.get(0)?,
+                    tokens: row.get::<_, i64>(1)? as u64,
+                    cost: row.get(2)?,
+                    balance: row.get(3)?,
+                })
+            },
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    })
+    .map_err(AppError::from)
+}
+
+/// 消耗预测：近 7 天日均费用 + 当前余额 → 预计剩余天数与耗尽日期（mission.md §13）。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Prediction {
+    pub daily_cost_avg: f64,
+    pub balance: Option<f64>,
+    pub days_left: Option<f64>,
+    pub exhausted_date: Option<String>,
+}
+
+/// 计算指定 Provider 的消耗预测。
+#[tauri::command]
+pub fn get_prediction(
+    db: State<'_, Db>,
+    provider_id: i64,
+) -> Result<Option<Prediction>, AppError> {
+    let history = get_usage_history(db, Some(provider_id), Some(7))?;
+    // 近 7 天日均费用（含今日；无数据则 0）
+    let total_cost: f64 = history.iter().map(|d| d.cost).sum();
+    let daily_avg = if history.is_empty() { 0.0 } else { total_cost / 7.0 };
+    // 当前余额 = 最新一天记录的 balance
+    let balance = history.last().and_then(|d| d.balance);
+    let (days_left, exhausted_date) = match (balance, daily_avg) {
+        (Some(b), avg) if avg > 0.0 && b > 0.0 => {
+            let days = (b / avg).max(0.0);
+            let date = chrono::Utc::now()
+                .date_naive()
+                .checked_add_signed(chrono::Duration::days(days as i64));
+            (Some(days), date.map(|d| d.to_string()))
+        }
+        _ => (None, None),
+    };
+    Ok(Some(Prediction {
+        daily_cost_avg: daily_avg,
+        balance,
+        days_left,
+        exhausted_date,
+    }))
+}
+
+/// 额度提醒级别（mission.md §11：>50% 正常 / <30% 黄 / <10% 红）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AlertLevel {
+    None,
+    Warning, // <30%
+    Critical, // <10%
+}
+
+/// 根据剩余百分比计算提醒级别。
+pub fn alert_level_for(remaining_percent: Option<f64>) -> AlertLevel {
+    match remaining_percent {
+        Some(p) if p < 10.0 => AlertLevel::Critical,
+        Some(p) if p < 30.0 => AlertLevel::Warning,
+        _ => AlertLevel::None,
+    }
+}
+
+/// 提醒去重状态（provider_id → 上次级别），级别提升才通知。
+#[derive(Default)]
+pub struct AlertState(pub std::sync::Mutex<std::collections::HashMap<i64, AlertLevel>>);
+
+/// 刷新成功后检查额度并发送系统通知（mission.md §11）。
+/// 仅在级别提升（None→Warning/Critical、Warning→Critical）时通知，恢复后重置。
+pub fn check_alerts(
+    app: &tauri::AppHandle,
+    state: &AlertState,
+    provider: &crate::providers::ProviderConfig,
+    usage: &ProviderUsage,
+) {
+    let level = alert_level_for(usage.remaining);
+    let mut map = state.0.lock().unwrap();
+    let prev = map.get(&provider.id).copied().unwrap_or(AlertLevel::None);
+    if level > prev {
+        if level != AlertLevel::None {
+            use tauri_plugin_notification::NotificationExt;
+            let pct = usage.remaining.unwrap_or(0.0);
+            let (title, body) = match level {
+                AlertLevel::Critical => (
+                    "AI API Monitor：额度严重不足",
+                    format!("{} 剩余额度不足 10%（{:.1}%）", provider.name, pct),
+                ),
+                AlertLevel::Warning => (
+                    "AI API Monitor：额度偏低",
+                    format!("{} 剩余额度低于 30%（{:.1}%）", provider.name, pct),
+                ),
+                AlertLevel::None => return,
+            };
+            let _ = app
+                .notification()
+                .builder()
+                .title(title)
+                .body(body)
+                .show();
+        }
+        map.insert(provider.id, level);
+    } else if level < prev {
+        map.insert(provider.id, level); // 已充值/恢复：重置，下次跌破再提醒
+    }
+}
+
 /// 读取 DIY 布局 JSON（V0.3；未设置时返回 None）。
 #[tauri::command]
 pub fn get_layout(db: State<'_, Db>) -> Result<Option<String>, AppError> {
@@ -209,7 +363,7 @@ pub fn validate_layout_json(layout: &str) -> Result<(), String> {
         if !ids.insert(id) {
             return Err(format!("Widget id 重复: {id}"));
         }
-        if !["providers", "summary", "cost"].contains(&ty) {
+        if !["providers", "summary", "cost", "trend"].contains(&ty) {
             return Err(format!("未知 Widget 类型: {ty}"));
         }
         if !visible.is_some_and(|v| v.is_boolean()) {
@@ -349,6 +503,17 @@ mod tests {
     fn rejects_background_smaller_than_foreground() {
         assert!(validate_refresh_intervals(60, 30).is_err());
         assert!(validate_refresh_intervals(300, 60).is_err());
+    }
+
+    #[test]
+    fn alert_level_thresholds() {
+        use super::AlertLevel;
+        assert_eq!(super::alert_level_for(None), AlertLevel::None);
+        assert_eq!(super::alert_level_for(Some(50.0)), AlertLevel::None);
+        assert_eq!(super::alert_level_for(Some(30.0)), AlertLevel::None); // 边界 30% 属正常
+        assert_eq!(super::alert_level_for(Some(29.9)), AlertLevel::Warning);
+        assert_eq!(super::alert_level_for(Some(10.0)), AlertLevel::Warning); // 边界 10% 属警告
+        assert_eq!(super::alert_level_for(Some(9.9)), AlertLevel::Critical);
     }
 
     #[test]

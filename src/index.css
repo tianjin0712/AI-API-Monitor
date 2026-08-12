@@ -146,6 +146,100 @@ html[data-theme="light"] .glass {
   box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.15);
 }
 
+/* Provider 类型选择器：自绘面板，保证深色、高对比度和圆角一致。 */
+.provider-picker {
+  position: relative;
+}
+.provider-picker-trigger {
+  display: flex;
+  width: 100%;
+  height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: #171a21;
+  padding: 0 12px;
+  color: #f8fafc;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.provider-picker-trigger:focus-visible,
+.provider-picker-trigger[aria-expanded="true"] {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.15);
+}
+.provider-picker-chevron {
+  font-size: 16px;
+  line-height: 1;
+  transition: transform 0.15s ease;
+}
+.provider-picker-chevron.is-open {
+  transform: rotate(180deg);
+}
+.provider-picker-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  border: 1px solid #343a46;
+  border-radius: 12px;
+  background: #111318;
+  padding: 5px;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+}
+.provider-picker-option {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 11px;
+  color: #f8fafc;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.provider-picker-option:hover,
+.provider-picker-option:focus-visible {
+  background: #242936;
+  outline: none;
+}
+.provider-picker-option[aria-selected="true"] {
+  background: #3157c8;
+  color: #ffffff;
+}
+
+/* 圆形选择控件，替代平台默认的方形 checkbox。 */
+.round-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 0;
+  cursor: pointer;
+  border: 1.5px solid var(--color-text-muted);
+  border-radius: 999px;
+  background: transparent;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+.round-checkbox:hover {
+  border-color: var(--color-accent);
+}
+.round-checkbox:checked {
+  border-color: var(--color-accent);
+  background-color: var(--color-accent);
+  background-image: radial-gradient(circle, #ffffff 0 3px, transparent 3.5px);
+}
+.round-checkbox:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.24);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
