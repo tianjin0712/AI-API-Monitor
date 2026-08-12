@@ -1,11 +1,17 @@
 # AI API Monitor
 
-实时监控 **OpenAI / DeepSeek** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
+实时监控 **OpenAI / DeepSeek / Codex** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
 
 > 定位：类似 GPU Monitor / Rainmeter / macOS Widget 的 AI 资源监控中心。
 > 项目方案详见 [`mission.md`](./mission.md)。
 
 ## ✨ 功能
+
+### V0.3 DIY UI
+
+- ✅ 主题系统：亮/暗主题切换（标题栏按钮），持久化并启动恢复
+- ✅ Widget 布局：账户列表 / 今日汇总 / 费用概览 三区块自由组合
+- ✅ 编辑模式：Widget 拖拽排序 + 显示/隐藏（布局 JSON 持久化）
 
 ### V0.2 桌面能力
 
@@ -46,7 +52,7 @@
 ├── src-tauri/            # 后端（Rust）
 │   ├── src/
 │   │   ├── db/           #   SQLite 连接 + 迁移
-│   │   ├── providers/    #   Provider 抽象 + DeepSeek/OpenAI 适配器
+│   │   ├── providers/    #   Provider 抽象 + DeepSeek/OpenAI/Codex 适配器
 │   │   ├── storage.rs    #   keyring 安全存储（uuid 凭据引用）
 │   │   ├── settings.rs   #   Provider CRUD + 设置
 │   │   ├── commands.rs   #   Tauri commands
@@ -81,6 +87,8 @@ impl ProviderAdapter for MyProvider {
 ```
 
 > 类型需在 `ProviderManager` 注册（白名单校验），URL 必须 HTTPS（本机回环除外）。
+> 特例：`codex` 类型无需 API Key——自动复用 Codex CLI 登录态（`~/.codex/auth.json`），
+> 前端表单会隐藏 Key 输入（见 `NO_API_KEY_TYPES`）。
 
 ## 🔐 安全
 
@@ -91,6 +99,5 @@ impl ProviderAdapter for MyProvider {
 
 ## 🗺️ 路线图
 
-- V0.3 DIY UI（Widget 拖拽、布局 JSON、主题系统）
-- V0.4 Codex / Claude / Gemini / OpenRouter / SiliconFlow
+- V0.4 Claude / Gemini / OpenRouter / SiliconFlow
 - V0.5 Token 历史、消耗曲线、费用与耗尽时间预测、额度预警
