@@ -466,6 +466,58 @@ pub fn get_layout(db: State<'_, Db>) -> Result<Option<String>, AppError> {
     settings::get_setting(&db, settings::SETTING_LAYOUT)
 }
 
+// ---- V1.0 自动更新 ----
+
+/// 更新检查结果。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub available: bool,
+    pub version: Option<String>,
+    pub notes: Option<String>,
+}
+
+/// 检查是否有可用更新（需要发布前配置 updater 签名与更新源）。
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, AppError> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app
+        .updater()
+        .map_err(|e| AppError::Invalid(format!("更新器未配置（发布前需配置签名与更新源）: {e}")))?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(UpdateInfo {
+            available: true,
+            version: Some(update.version.clone()),
+            notes: update.body.clone(),
+        }),
+        Ok(None) => Ok(UpdateInfo {
+            available: false,
+            version: None,
+            notes: None,
+        }),
+        Err(e) => Err(AppError::Invalid(format!("更新检查失败: {e}"))),
+    }
+}
+
+/// 下载并安装可用更新（安装完成后通常需要重启应用）。
+#[tauri::command]
+pub async fn install_update(app: AppHandle) -> Result<String, AppError> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app
+        .updater()
+        .map_err(|e| AppError::Invalid(format!("更新器未配置: {e}")))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| AppError::Invalid(format!("更新检查失败: {e}")))?
+        .ok_or_else(|| AppError::Invalid("当前没有可用更新".into()))?;
+    let _ = update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|e| AppError::Invalid(format!("更新下载/安装失败: {e}")))?;
+    Ok(format!("已更新到 v{}，请重启应用生效", update.version))
+}
+
 /// 布局 JSON 校验（纯函数，供命令与测试复用，V0.3）。
 /// P2：校验 theme、widgets 数组、每项 id/type/visible、ID 唯一性、数量与大小限制。
 pub fn validate_layout_json(layout: &str) -> Result<(), String> {

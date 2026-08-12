@@ -21,6 +21,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 初始化 SQLite 数据库（app data 目录）
             let data_dir = app.path().app_data_dir()?;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::set_layout,
             commands::get_usage_history,
             commands::get_prediction,
+            commands::check_update,
+            commands::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

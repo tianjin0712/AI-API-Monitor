@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef, useState } from "react";import { listen } from "@tauri-apps/api/event";
 import { api } from "./api";
 import TitleBar from "./components/TitleBar";
 import MiniBall from "./components/MiniBall";
@@ -26,12 +25,23 @@ export default function App() {
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "failed">("idle");
   const saveTimer = useRef<number | undefined>(undefined);
+  // 已应用的主题覆盖变量（用于清理）
+  const appliedOverridesRef = useRef<Record<string, string>>({});
 
-  // 应用主题到 <html data-theme>
+  // 应用主题到 <html data-theme>（V0.3）+ 自定义色值覆盖（V1.0 主题分享）
   useEffect(() => {
-    document.documentElement.dataset.theme = layout.theme;
+    const el = document.documentElement;
+    el.dataset.theme = layout.theme;
     window.localStorage.setItem("ai-monitor-theme", layout.theme);
-  }, [layout.theme]);
+    // 清理旧覆盖变量后应用新的
+    for (const key of Object.keys(appliedOverridesRef.current)) {
+      el.style.removeProperty(`--color-${key}`);
+    }
+    appliedOverridesRef.current = layout.themeOverrides ?? {};
+    for (const [key, value] of Object.entries(appliedOverridesRef.current)) {
+      if (key && value) el.style.setProperty(`--color-${key}`, value);
+    }
+  }, [layout.theme, layout.themeOverrides]);
 
   // 启动：读取窗口状态 + 布局（theme/widgets）
   useEffect(() => {
@@ -179,7 +189,7 @@ export default function App() {
             onWidgetsChange={updateWidgets}
           />
         ) : (
-          <Settings />
+          <Settings layout={layout} onLayoutChange={updateLayout} />
         )}
       </main>
     </div>

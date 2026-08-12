@@ -10,7 +10,8 @@ export type ProviderType =
   | "codex"
   | "openrouter"
   | "siliconflow"
-  | "claude";
+  | "claude"
+  | "custom";
 
 export interface ProviderConfig {
   id: number;
@@ -86,6 +87,8 @@ export interface DashboardWidget {
 export interface Layout {
   theme: "dark" | "light";
   widgets: DashboardWidget[];
+  /** V1.0 自定义主题：CSS 变量名（不含 --color- 前缀）→ 色值 */
+  themeOverrides?: Record<string, string>;
 }
 
 // ---- V0.5 高级统计 ----
@@ -112,4 +115,11 @@ export interface Prediction {
   balance: number | null;
   daysLeft: number | null;
   exhaustedDate: string | null;
+}
+
+/** V1.0 更新检查结果 */
+export interface UpdateInfo {
+  available: boolean;
+  version: string | null;
+  notes: string | null;
 }

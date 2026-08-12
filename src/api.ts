@@ -7,6 +7,7 @@ import type {
   ProviderUsage,
   RefreshResult,
   RefreshSettings,
+  UpdateInfo,
   WindowMode,
   WindowState,
 } from "./types";
@@ -60,4 +61,8 @@ export const api = {
     invoke<DailyUsage[]>("get_usage_history", { providerId, days }),
   getPrediction: (providerId: number) =>
     invoke<Prediction | null>("get_prediction", { providerId }),
+
+  // ---- V1.0 自动更新 ----
+  checkUpdate: () => invoke<UpdateInfo>("check_update"),
+  installUpdate: () => invoke<string>("install_update"),
 };

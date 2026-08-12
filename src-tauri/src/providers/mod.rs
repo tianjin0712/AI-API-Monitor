@@ -168,6 +168,8 @@ impl ProviderManager {
         let mut registry: HashMap<String, Box<dyn ProviderAdapter>> = HashMap::new();
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
+        // V1.0 插件化基础：custom = OpenAI 兼容通用适配器（任意 Base URL，可接入国内代理/私有部署）
+        registry.insert("custom".into(), Box::new(openai::OpenAIProvider));
         registry.insert("codex".into(), Box::new(codex::CodexProvider));
         registry.insert(
             "openrouter".into(),

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type {
   DeleteResult,
+  Layout,
   ProviderConfig,
   RefreshSettings,
+  UpdateInfo,
 } from "../types";
 
 type FormState = {
@@ -29,6 +31,7 @@ const TYPE_PRESETS: Record<string, string> = {
   openrouter: "https://openrouter.ai",
   siliconflow: "https://api.siliconflow.cn/v1",
   claude: "https://api.anthropic.com/v1",
+  custom: "",
 };
 
 /** 使用 CLI 本地凭证的类型（无需输入 API Key） */
@@ -38,10 +41,17 @@ const NO_API_KEY_TYPES = new Set(["codex"]);
 const TYPE_HINTS: Record<string, string> = {
   codex: "无需 API Key：自动复用 Codex CLI 登录态（~/.codex/auth.json），请确保已运行 `codex login` 登录 ChatGPT。",
   claude: "需要组织（Organization）管理员 API Key（sk-ant-admin01-...）；个人账户不可用。Anthropic 为后付费账单，无余额查询，仅显示用量与费用。",
+  custom: "自定义（OpenAI 兼容）：填写平台提供的 Base URL 与 API Key，适用于国内代理 / 私有部署等兼容接口（需支持 /organization/usage/completions 等端点）。",
 };
 
 /** 设置页：Provider 增删改查 + 刷新策略 */
-export default function Settings() {
+export default function Settings({
+  layout,
+  onLayoutChange,
+}: {
+  layout: Layout;
+  onLayoutChange: (updater: (prev: Layout) => Layout) => void;
+}) {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -54,6 +64,8 @@ export default function Settings() {
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const [migrationFailed, setMigrationFailed] = useState(0);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const typeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const typeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -472,6 +484,176 @@ export default function Settings() {
           />
         </label>
       </section>
+
+      {/* V1.0 主题分享：自定义色值 + 导出/导入 */}
+      <section className="glass p-4">
+        <h2 className="text-[13px] font-semibold text-text-primary">
+          主题分享
+        </h2>
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          {(
+            [
+              ["accent", "强调色"],
+              ["surface", "背景"],
+              ["card", "卡片"],
+              ["text-primary", "主文字"],
+              ["success", "成功色"],
+              ["danger", "危险色"],
+            ] as [string, string][]
+          ).map(([key, label]) => (
+            <label key={key} className="flex items-center justify-between text-[12px] text-text-secondary">
+              <span>{label}</span>
+              <input
+                type="color"
+                className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent"
+                value={hexOf(layout.themeOverrides?.[key])}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  onLayoutChange((prev) => ({
+                    ...prev,
+                    themeOverrides: { ...(prev.themeOverrides ?? {}), [key]: v },
+                  }));
+                }}
+                aria-label={label}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="btn btn-ghost px-3 py-1 text-[12px]"
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(exportTheme(layout))
+                .then(() => setError(null))
+                .catch((e) => setError(`复制失败: ${String(e)}`));
+            }}
+          >
+            导出主题（复制 JSON）
+          </button>
+          <button
+            className="btn btn-ghost px-3 py-1 text-[12px]"
+            onClick={async () => {
+              try {
+                const text = await navigator.clipboard.readText();
+                const imported = importTheme(text);
+                if (!imported) {
+                  setError("导入失败：JSON 格式无效（需 { theme, overrides }）");
+                  return;
+                }
+                onLayoutChange((prev) => ({
+                  ...prev,
+                  theme: imported.theme,
+                  themeOverrides: imported.overrides,
+                }));
+                setError(null);
+              } catch (e) {
+                setError(`导入失败: ${String(e)}`);
+              }
+            }}
+          >
+            从剪贴板导入
+          </button>
+          <button
+            className="btn btn-ghost px-3 py-1 text-[12px]"
+            onClick={() =>
+              onLayoutChange((prev) => ({ ...prev, themeOverrides: undefined }))
+            }
+          >
+            重置自定义
+          </button>
+        </div>
+        <p className="mt-2 text-[10px] text-text-muted">
+          自定义色值随布局保存；导出后可在其他设备「从剪贴板导入」共享主题。
+        </p>
+      </section>
+
+      {/* V1.0 关于与自动更新 */}
+      <section className="glass p-4">
+        <h2 className="text-[13px] font-semibold text-text-primary">关于与更新</h2>
+        <p className="mt-2 text-[12px] text-text-secondary">AI API Monitor v0.1.0</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            className="btn btn-ghost px-3 py-1 text-[12px]"
+            onClick={async () => {
+              setUpdateStatus("检查中…");
+              try {
+                const info = await api.checkUpdate();
+                setUpdateInfo(info);
+                setUpdateStatus(
+                  info.available
+                    ? `发现新版本 v${info.version}`
+                    : "已是最新版本",
+                );
+              } catch (e) {
+                setUpdateStatus(String(e));
+              }
+            }}
+          >
+            检查更新
+          </button>
+          {updateInfo?.available && (
+            <button
+              className="btn btn-primary px-3 py-1 text-[12px]"
+              onClick={async () => {
+                setUpdateStatus("下载并安装中…");
+                try {
+                  const msg = await api.installUpdate();
+                  setUpdateStatus(msg);
+                } catch (e) {
+                  setUpdateStatus(String(e));
+                }
+              }}
+            >
+              下载并安装
+            </button>
+          )}
+        </div>
+        {updateStatus && (
+          <p className="mt-2 text-[11px] text-text-secondary">{updateStatus}</p>
+        )}
+        <p className="mt-2 text-[10px] text-text-muted">
+          自动更新需发布者在构建时配置更新签名与更新源（见 README 发布章节）；
+          未配置时将提示"更新器未配置"。
+        </p>
+      </section>
     </div>
   );
+}
+
+// ---- V1.0 主题分享辅助 ----
+
+/** 归一化为 color input 可用的 hex（非法/缺失回退 #000000） */
+function hexOf(value: string | undefined): string {
+  return /^#[0-9a-fA-F]{6}$/.test(value ?? "") ? (value as string) : "#000000";
+}
+
+/** 导出主题为 JSON 文本 */
+function exportTheme(layout: Layout): string {
+  return JSON.stringify(
+    {
+      theme: layout.theme,
+      overrides: layout.themeOverrides ?? {},
+    },
+    null,
+    2,
+  );
+}
+
+/** 解析导入的主题 JSON；无效返回 null */
+function importTheme(text: string): { theme: Layout["theme"]; overrides: Record<string, string> } | null {
+  try {
+    const parsed = JSON.parse(text) as {
+      theme?: string;
+      overrides?: Record<string, string>;
+    };
+    if (parsed.theme !== "dark" && parsed.theme !== "light") return null;
+    const overrides: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed.overrides ?? {})) {
+      if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) overrides[k] = v;
+    }
+    return { theme: parsed.theme, overrides };
+  } catch {
+    return null;
+  }
 }

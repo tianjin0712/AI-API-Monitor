@@ -115,6 +115,32 @@ impl ProviderAdapter for MyProvider {
 - 刷新间隔后端最终校验（前台 10–3600s / 后台 60–3600s / 后台 ≥ 前台）
 - 数据库位于系统 app data 目录（`com.aiapimonitor.desktop`）
 
+## 📦 发布（V1.0）
+
+自动更新需要发布者在构建时配置签名与更新源（`tauri-plugin-updater` 已集成）：
+
+```bash
+# 1. 生成更新签名密钥（仅一次，妥善保管）
+npx tauri signer generate -w ~/.tauri/myapp.key
+
+# 2. 在 src-tauri/tauri.conf.json 的 app.updater 段填写：
+#    "endpoints": ["https://your-host/updates/{{target}}/{{arch}}/{{current_version}}"],
+#    "pubkey": "<上面生成的公钥>"
+
+# 3. 打包发布（Windows 生成 NSIS/MSI 安装包）
+pnpm tauri build
+
+# 4. 将安装包与生成的 .sig 签名文件上传到更新源服务器
+```
+
+未配置更新源时，应用内「检查更新」会提示"更新器未配置"；配置后即可正常检查/下载/安装。
+
+### 平台
+
+- Windows：NSIS 安装包（默认）与 MSI
+- macOS：DMG（需在 macOS 上执行构建并配置签名证书）
+- 发布 CI 参考 `.github/workflows/quality.yml`（质量检查）；正式发布流水线可按需扩展
+
 ## 🗺️ 路线图
 
 - 完整 DIY UI（Widget 缩放 / 透明 / 圆角 / 字体 / 颜色 / 自由定位）

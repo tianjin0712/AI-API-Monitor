@@ -498,6 +498,22 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 12：V1.0 正式版（提交 `（待提交）`）
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| 插件化 Provider | ✅ 已实现 | `custom` 类型（OpenAI 兼容通用适配器，任意 Base URL）注册到 ProviderManager；前端类型/提示适配（国内代理/私有部署） |
+| 主题分享 | ✅ 已实现 | Layout 新增 `themeOverrides`（CSS 变量覆盖）；App 应用覆盖色值；Settings 主题区：6 个关键色编辑器 + 导出主题（复制 JSON）/从剪贴板导入/重置 |
+| 自动更新 | ✅ 已集成 | `tauri-plugin-updater` 依赖+注册+capability+顶层 `plugins.updater` 配置；`check_update`/`install_update` 命令；Settings 关于区检查/下载安装按钮 + 状态提示；未配置更新源时明确提示 |
+| 发布 | ✅ 已准备 | README 发布章节（签名密钥生成/updater 配置/tauri build/更新源部署 + Windows NSIS+MSI、macOS DMG）；`cargo check --release` 通过；bundle targets=all |
+
+### 测试状态更新
+
+- `cargo test`：51 passed / 0 failed（custom 注册不影响既有测试）
+- `cargo check`：零警告；`cargo check --release` 通过
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常（updater 配置段修复后）
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
