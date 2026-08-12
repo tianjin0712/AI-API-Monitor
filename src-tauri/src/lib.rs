@@ -10,7 +10,7 @@ use crate::db::Db;
 use crate::providers::ProviderManager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 /// 主窗口标签名（与 tauri.conf.json 一致）。
 pub const MAIN_WINDOW: &str = "main";
@@ -28,8 +28,14 @@ pub fn run() {
             app.manage(db);
             app.manage(ProviderManager::new());
 
+            // 启动时执行旧凭据迁移（幂等，V3）
+            if let Err(e) = settings::migrate_legacy_credentials(app.state::<Db>().inner()) {
+                eprintln!("[setup] 凭据迁移失败: {e}");
+            }
+
             setup_tray(app)?;
             setup_close_to_tray(app)?;
+            setup_geometry_persist(app)?;
 
             // 启动时恢复窗口模式与置顶设置（V0.2）
             window_mode::restore_window_state(app)?;
@@ -72,7 +78,7 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
         .icon(app.default_window_icon().expect("app icon").clone())
         .tooltip("AI API Monitor")
         .menu(&menu)
-        .show_menu_on_left_click(true)
+        .show_menu_on_left_click(false) // 左键=切换可见性，右键=菜单（P1 修复交互冲突）
         .on_menu_event(|app, event| match event.id.as_ref() {
             "mode_full" => switch_window_mode(app, crate::window_mode::WindowMode::Full),
             "mode_mini" => switch_window_mode(app, crate::window_mode::WindowMode::Mini),
@@ -132,6 +138,27 @@ fn setup_close_to_tray(app: &tauri::App) -> tauri::Result<()> {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = win.hide();
+            }
+        });
+    }
+    Ok(())
+}
+
+/// 监听窗口移动/缩放（持久化几何）与聚焦（唤醒刷新事件），P2。
+fn setup_geometry_persist(app: &tauri::App) -> tauri::Result<()> {
+    let handle = app.handle().clone();
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        window.on_window_event(move |event| {
+            match event {
+                WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                    let db = handle.state::<Db>();
+                    crate::window_mode::save_current_geometry(&handle, &db);
+                }
+                WindowEvent::Focused(true) => {
+                    // 窗口恢复聚焦（含系统唤醒后）立即通知前端刷新
+                    let _ = handle.emit("app-focused", ());
+                }
+                _ => {}
             }
         });
     }

@@ -80,6 +80,13 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.pragma_update(None, "user_version", version)?;
     }
 
+    if version < 3 {
+        // V3: 标记旧凭据（provider_<name>）已迁移到 UUID 引用。
+        // 实际数据迁移由 settings::migrate_legacy_credentials 在应用启动时执行（依赖 keyring）。
+        version = 3;
+        conn.pragma_update(None, "user_version", version)?;
+    }
+
     Ok(())
 }
 
@@ -94,7 +101,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
             .unwrap()
@@ -115,6 +122,6 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 2);
+        assert_eq!(version, 3);
     }
 }

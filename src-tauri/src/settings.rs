@@ -201,8 +201,18 @@ pub fn update_provider(
     })
 }
 
+/// 删除结果（凭据清理状态可见，P2 修复）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteResult {
+    pub provider_id: i64,
+    pub credential_cleaned: bool,
+    pub note: Option<String>,
+}
+
 /// 删除 Provider：先删数据库行，再清 keyring 凭证。
-pub fn delete_provider(db: &Db, id: i64) -> Result<(), AppError> {
+/// 凭据清理失败时返回可见状态（不静默），供前端提示用户。
+pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
     let key_ref: Option<String> = db.with_conn(|conn| {
         conn.query_row(
             "SELECT key_ref FROM providers WHERE id = ?1",
@@ -222,13 +232,31 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<(), AppError> {
         rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
         other => AppError::Db(other),
     })?;
-    if let Some(kr) = key_ref {
-        // 凭据清理失败不影响记录删除，但需显式记录以便追踪（codereview P1）
-        if let Err(e) = SecureStorage::delete_api_key(&kr) {
-            eprintln!("[delete_provider] 凭据清理失败（key_ref={kr}）: {e}");
-        }
+
+    match key_ref {
+        None => Ok(DeleteResult {
+            provider_id: id,
+            credential_cleaned: true,
+            note: None,
+        }),
+        Some(kr) => match SecureStorage::delete_api_key(&kr) {
+            Ok(()) => Ok(DeleteResult {
+                provider_id: id,
+                credential_cleaned: true,
+                note: None,
+            }),
+            Err(e) => {
+                eprintln!("[delete_provider] 凭据清理失败（key_ref={kr}）: {e}");
+                Ok(DeleteResult {
+                    provider_id: id,
+                    credential_cleaned: false,
+                    note: Some(format!(
+                        "账户已删除，但系统凭据库中的密钥清理失败，可能残留敏感信息：{e}"
+                    )),
+                })
+            }
+        },
     }
-    Ok(())
 }
 
 /// 读取设置值。
@@ -252,6 +280,48 @@ pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), AppError> {
         Ok(())
     })
     .map_err(AppError::from)
+}
+
+/// 将旧版按名称生成的凭据引用（`provider_<name>`）迁移为 UUID 引用（P1/V3 迁移）。
+/// 幂等：仅处理 account 以 `provider_` 开头的旧格式；无法读取的凭据保留记录并提示，
+/// 不静默丢失。返回成功迁移的条数。
+pub fn migrate_legacy_credentials(db: &Db) -> Result<usize, AppError> {
+    let rows: Vec<(i64, String)> = db.with_conn(|conn| {
+        let mut stmt = conn.prepare("SELECT id, key_ref FROM providers")?;
+        let iter = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        iter.collect()
+    })?;
+
+    let mut migrated = 0;
+    for (id, key_ref) in rows {
+        let account = key_ref.rsplit_once(':').map(|(_, a)| a).unwrap_or("");
+        if !account.starts_with("provider_") {
+            continue; // 已是 UUID 格式（key_<uuid>）或未知格式
+        }
+        match SecureStorage::get_api_key(&key_ref) {
+            Ok(api_key) => {
+                let key_id = SecureStorage::gen_key_id();
+                let new_ref = SecureStorage::save_api_key(&key_id, &api_key)?;
+                db.with_conn(|conn| {
+                    conn.execute(
+                        "UPDATE providers SET key_ref = ?1 WHERE id = ?2",
+                        rusqlite::params![new_ref, id],
+                    )
+                })?;
+                if let Err(e) = SecureStorage::delete_api_key(&key_ref) {
+                    eprintln!("[migrate] 清理旧凭据失败（{key_ref}）: {e}");
+                }
+                migrated += 1;
+            }
+            Err(e) => {
+                // 凭据无法读取：保留旧记录并提示用户重新录入，不可静默丢失
+                eprintln!(
+                    "[migrate] 旧凭据无法读取（{key_ref}，provider id={id}）: {e}，请重新录入该账户"
+                );
+            }
+        }
+    }
+    Ok(migrated)
 }
 
 /// 读取前台刷新间隔（秒），未配置时返回默认值 10。

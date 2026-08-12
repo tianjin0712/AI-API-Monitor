@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import type { ProviderConfig, RefreshSettings } from "../types";
+import type {
+  DeleteResult,
+  ProviderConfig,
+  RefreshSettings,
+} from "../types";
 
 type FormState = {
   id: number | null; // null = 新增
@@ -108,8 +112,11 @@ export default function Settings() {
   const remove = async (p: ProviderConfig) => {
     if (!window.confirm(`删除账户「${p.name}」？（API Key 将一并清除）`)) return;
     try {
-      await api.deleteProvider(p.id);
+      const result: DeleteResult = await api.deleteProvider(p.id);
       await load();
+      if (!result.credentialCleaned) {
+        setError(result.note ?? "账户已删除，但凭据清理状态未知");
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -192,6 +199,12 @@ export default function Settings() {
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
             />
           </label>
+          {form.providerType === "openai" && (
+            <p className="col-span-2 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
+              提示：OpenAI 用量/费用接口需要组织（Organization）管理员权限的
+              API Key，普通项目 Key 会返回 403。
+            </p>
+          )}
         </div>
         <div className="mt-3 flex gap-2">
           <button

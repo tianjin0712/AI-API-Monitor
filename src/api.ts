@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  DeleteResult,
   ProviderConfig,
   ProviderUsage,
   RefreshResult,
@@ -26,7 +27,7 @@ export const api = {
     apiKey?: string | null;
   }) => invoke<ProviderConfig>("update_provider", input),
 
-  deleteProvider: (id: number) => invoke<void>("delete_provider", { id }),
+  deleteProvider: (id: number) => invoke<DeleteResult>("delete_provider", { id }),
 
   supportedProviderTypes: () => invoke<string[]>("supported_provider_types"),
 

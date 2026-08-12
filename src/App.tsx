@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "./api";
 import TitleBar from "./components/TitleBar";
 import MiniBall from "./components/MiniBall";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
-import type { WindowMode } from "./types";
+import type { WindowMode, WindowState } from "./types";
 
 type Page = "dashboard" | "settings";
 
@@ -18,6 +19,16 @@ export default function App() {
       .getWindowState()
       .then((s) => setMode(s.mode))
       .catch(() => {});
+  }, []);
+
+  // 监听后端模式/置顶变更事件（托盘菜单等路径统一同步，P0 修复）
+  useEffect(() => {
+    const unlisten = listen<WindowState>("window-mode-changed", (e) => {
+      setMode(e.payload.mode);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
   }, []);
 
   const switchMode = async (m: WindowMode) => {

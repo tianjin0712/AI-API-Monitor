@@ -54,3 +54,10 @@ export interface WindowState {
   mode: WindowMode;
   alwaysOnTop: boolean;
 }
+
+/** 删除 Provider 的结果（凭据清理状态） */
+export interface DeleteResult {
+  providerId: number;
+  credentialCleaned: boolean;
+  note: string | null;
+}

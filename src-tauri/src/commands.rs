@@ -44,9 +44,9 @@ pub fn update_provider(
     settings::update_provider(&db, &manager, id, &name, &api_url, api_key.as_deref())
 }
 
-/// 删除 Provider（含 keyring 凭据清理）。
+/// 删除 Provider（含 keyring 凭据清理，清理失败返回可见状态）。
 #[tauri::command]
-pub fn delete_provider(db: State<'_, Db>, id: i64) -> Result<(), AppError> {
+pub fn delete_provider(db: State<'_, Db>, id: i64) -> Result<settings::DeleteResult, AppError> {
     settings::delete_provider(&db, id)
 }
 

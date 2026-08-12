@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import ProviderCard from "../components/ProviderCard";
 import type {
@@ -7,8 +8,8 @@ import type {
   RefreshSettings,
 } from "../types";
 
-/** 刷新最小间隔（毫秒），与后端校验一致 */
-const MIN_INTERVAL_MS = 5_000;
+/** 刷新最小间隔（毫秒），与后端前台最小 10 秒约束一致（P2 修复） */
+const MIN_INTERVAL_MS = 10_000;
 
 /** 总览页：Provider 卡片列表 + 手动刷新 + 前台/后台轮询（单飞） */
 export default function Dashboard() {
@@ -132,7 +133,7 @@ export default function Dashboard() {
   useEffect(() => {
     const intervalOf = () =>
       (document.visibilityState === "visible"
-        ? Math.max(refreshSettings.foregroundSecs, 5)
+        ? Math.max(refreshSettings.foregroundSecs, 10)
         : Math.max(refreshSettings.backgroundSecs, 60)) * 1000;
 
     let timer: number;
@@ -152,10 +153,19 @@ export default function Dashboard() {
     };
     document.addEventListener("visibilitychange", reset);
     window.addEventListener("focus", onFocus);
+    // 后端窗口聚焦事件（系统唤醒/窗口恢复时触发，比 WebView focus 更可靠）
+    let unlisten: (() => void) | undefined;
+    void listen<void>("app-focused", () => {
+      reset();
+      void runRefresh();
+    }).then((fn) => {
+      unlisten = fn;
+    });
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", reset);
       window.removeEventListener("focus", onFocus);
+      unlisten?.();
     };
   }, [refreshSettings.foregroundSecs, refreshSettings.backgroundSecs, runRefresh]);
 
