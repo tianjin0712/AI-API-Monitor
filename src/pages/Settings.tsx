@@ -55,6 +55,59 @@ export default function Settings() {
   const [migrationFailed, setMigrationFailed] = useState(0);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const typeMenuRef = useRef<HTMLDivElement>(null);
+  const typeTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const typeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // P2：菜单打开时聚焦当前选中项（roving focus 起点）
+  useEffect(() => {
+    if (typeMenuOpen) {
+      const idx = Math.max(0, types.indexOf(form.providerType));
+      requestAnimationFrame(() => typeOptionRefs.current[idx]?.focus());
+    }
+  }, [typeMenuOpen, types, form.providerType]);
+
+  const selectType = (type: string) => {
+    setForm({
+      ...form,
+      providerType: type,
+      apiUrl: TYPE_PRESETS[type] ?? form.apiUrl,
+    });
+    setTypeMenuOpen(false);
+    typeTriggerRef.current?.focus(); // 选择后归还焦点
+  };
+
+  // P2：完整键盘语义（方向键循环 / Home / End / Enter / Space / Escape 归还焦点）
+  const handleOptionKey =
+    (idx: number) => (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      const last = types.length - 1;
+      const move = (to: number) => {
+        typeOptionRefs.current[to]?.focus();
+        event.preventDefault();
+      };
+      switch (event.key) {
+        case "ArrowDown":
+          move(idx === last ? 0 : idx + 1);
+          break;
+        case "ArrowUp":
+          move(idx === 0 ? last : idx - 1);
+          break;
+        case "Home":
+          move(0);
+          break;
+        case "End":
+          move(last);
+          break;
+        case "Enter":
+        case " ":
+          selectType(types[idx]);
+          event.preventDefault();
+          break;
+        case "Escape":
+          setTypeMenuOpen(false);
+          typeTriggerRef.current?.focus();
+          break;
+      }
+    };
 
   useEffect(() => {
     const closeTypeMenu = (event: PointerEvent) => {
@@ -199,12 +252,17 @@ export default function Settings() {
             <div className="provider-picker mt-1">
               <button
                 type="button"
+                ref={typeTriggerRef}
                 className="provider-picker-trigger"
                 aria-haspopup="listbox"
                 aria-expanded={typeMenuOpen}
                 onClick={() => setTypeMenuOpen((open) => !open)}
                 onKeyDown={(event) => {
-                  if (event.key === "Escape") setTypeMenuOpen(false);
+                  // P2：方向键打开菜单并开始导航
+                  if (!typeMenuOpen && (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ")) {
+                    setTypeMenuOpen(true);
+                    event.preventDefault();
+                  }
                 }}
               >
                 <span>{form.providerType}</span>
@@ -214,21 +272,19 @@ export default function Settings() {
               </button>
               {typeMenuOpen && (
                 <div className="provider-picker-menu" role="listbox" aria-label="Provider 类型">
-                  {types.map((type) => (
+                  {types.map((type, idx) => (
                     <button
                       type="button"
                       role="option"
+                      ref={(el) => {
+                        typeOptionRefs.current[idx] = el;
+                      }}
+                      tabIndex={-1}
                       aria-selected={type === form.providerType}
                       className="provider-picker-option"
                       key={type}
-                      onClick={() => {
-                        setForm({
-                          ...form,
-                          providerType: type,
-                          apiUrl: TYPE_PRESETS[type] ?? form.apiUrl,
-                        });
-                        setTypeMenuOpen(false);
-                      }}
+                      onClick={() => selectType(type)}
+                      onKeyDown={handleOptionKey(idx)}
                     >
                       {type}
                     </button>

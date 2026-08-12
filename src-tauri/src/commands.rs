@@ -73,7 +73,11 @@ pub async fn refresh_provider(
     let mut usage = fetch_usage(manager.inner().as_ref(), &provider).await?;
     usage.provider_id = Some(provider.id);
     record_usage(&db, &provider, &usage)?;
-    check_alerts(&app, &alerts, &provider, &usage);
+    let days_left = predict_for(&db, provider.id, 7)
+        .ok()
+        .flatten()
+        .and_then(|p| p.days_left);
+    check_alerts(&app, &alerts, &provider, &usage, days_left);
     Ok(usage)
 }
 
@@ -136,7 +140,11 @@ pub async fn refresh_all(
                 } else {
                     result.success = true;
                     result.usage = Some(usage.clone());
-                    check_alerts(&app, &alerts, &provider, &usage);
+                    let days_left = predict_for(&db, provider.id, 7)
+                        .ok()
+                        .flatten()
+                        .and_then(|p| p.days_left);
+                    check_alerts(&app, &alerts, &provider, &usage, days_left);
                 }
             }
             Err(e) => {
@@ -185,9 +193,18 @@ pub fn get_migration_status(db: State<'_, Db>) -> Option<u64> {
 #[serde(rename_all = "camelCase")]
 pub struct DailyUsage {
     pub date: String, // YYYY-MM-DD
+    /// 累计 Token 快照（兼容历史；非当日趋势指标）
     pub tokens: u64,
-    pub cost: f64,
+    /// 当日 Token（NULL=平台不提供/未知）
+    pub today_tokens: Option<i64>,
+    /// 当日费用（NULL=平台不提供/未知，不伪装成 0）
+    pub cost: Option<f64>,
     pub balance: Option<f64>,
+}
+
+/// 历史窗口偏移（纯函数，V0.5 复审 P1）：包含今天的 N 天窗口 = -(days-1) 天。
+pub fn history_start_offset(days: u64) -> String {
+    format!("-{} days", days.saturating_sub(1))
 }
 
 /// 查询历史用量序列（按 provider，可空=全部；days 默认 30，上限 365）。
@@ -200,19 +217,20 @@ pub fn get_usage_history(
     let days = days.unwrap_or(30).clamp(1, 365);
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT date, tokens, cost, balance FROM usage_history
+            "SELECT date, tokens, today_tokens, cost, balance FROM usage_history
              WHERE (?1 IS NULL OR provider_id = ?1)
                AND date >= date('now', ?2)
              ORDER BY date",
         )?;
         let rows = stmt.query_map(
-            rusqlite::params![provider_id, format!("-{days} days")],
+            rusqlite::params![provider_id, history_start_offset(days)],
             |row| {
                 Ok(DailyUsage {
                     date: row.get(0)?,
                     tokens: row.get::<_, i64>(1)? as u64,
-                    cost: row.get(2)?,
-                    balance: row.get(3)?,
+                    today_tokens: row.get(2)?,
+                    cost: row.get(3)?,
+                    balance: row.get(4)?,
                 })
             },
         )?;
@@ -225,44 +243,89 @@ pub fn get_usage_history(
     .map_err(AppError::from)
 }
 
-/// 消耗预测：近 7 天日均费用 + 当前余额 → 预计剩余天数与耗尽日期（mission.md §13）。
+/// 消耗预测：近 N 天有效费用样本日均 + 当前余额 → 预计剩余天数与耗尽日期。
+/// V0.5 复审 P1：只使用真实费用样本（NULL 视为未知），按"有数据日"平均；补样本数/覆盖天数。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prediction {
     pub daily_cost_avg: f64,
+    /// 参与平均的有效费用样本数
+    pub samples: usize,
+    /// 覆盖的天数跨度（今天往前含 N 天）
+    pub days_span: u64,
     pub balance: Option<f64>,
     pub days_left: Option<f64>,
     pub exhausted_date: Option<String>,
 }
 
-/// 计算指定 Provider 的消耗预测。
-#[tauri::command]
-pub fn get_prediction(
-    db: State<'_, Db>,
-    provider_id: i64,
-) -> Result<Option<Prediction>, AppError> {
-    let history = get_usage_history(db, Some(provider_id), Some(7))?;
-    // 近 7 天日均费用（含今日；无数据则 0）
-    let total_cost: f64 = history.iter().map(|d| d.cost).sum();
-    let daily_avg = if history.is_empty() { 0.0 } else { total_cost / 7.0 };
+/// 由有效费用样本计算日均（纯函数，供测试）。
+pub fn daily_avg_from(history: &[DailyUsage]) -> f64 {
+    let valid: Vec<&DailyUsage> = history.iter().filter(|d| d.cost.is_some()).collect();
+    let sum: f64 = valid.iter().filter_map(|d| d.cost).sum();
+    if valid.is_empty() {
+        0.0
+    } else {
+        sum / valid.len() as f64 // 有数据日平均
+    }
+}
+
+/// 计算指定 Provider 的消耗预测（核心逻辑，供命令与刷新提醒复用）。
+pub fn predict_for(db: &Db, provider_id: i64, days: u64) -> Result<Option<Prediction>, AppError> {
+    let days = days.clamp(1, 365);
+    // 历史行查询（含今天的 N 天窗口）
+    let history: Vec<DailyUsage> = db
+        .with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT date, tokens, today_tokens, cost, balance FROM usage_history
+                 WHERE provider_id = ?1 AND date >= date('now', ?2)
+                 ORDER BY date",
+            )?;
+            let rows = stmt.query_map(
+                rusqlite::params![provider_id, history_start_offset(days)],
+                |row| {
+                    Ok(DailyUsage {
+                        date: row.get(0)?,
+                        tokens: row.get::<_, i64>(1)? as u64,
+                        today_tokens: row.get(2)?,
+                        cost: row.get(3)?,
+                        balance: row.get(4)?,
+                    })
+                },
+            )?;
+            rows.collect()
+        })
+        .map_err(AppError::from)?;
+    let daily_avg = daily_avg_from(&history);
     // 当前余额 = 最新一天记录的 balance
     let balance = history.last().and_then(|d| d.balance);
     let (days_left, exhausted_date) = match (balance, daily_avg) {
         (Some(b), avg) if avg > 0.0 && b > 0.0 => {
-            let days = (b / avg).max(0.0);
+            let d = (b / avg).max(0.0);
             let date = chrono::Utc::now()
                 .date_naive()
-                .checked_add_signed(chrono::Duration::days(days as i64));
-            (Some(days), date.map(|d| d.to_string()))
+                .checked_add_signed(chrono::Duration::days(d as i64));
+            (Some(d), date.map(|x| x.to_string()))
         }
         _ => (None, None),
     };
     Ok(Some(Prediction {
         daily_cost_avg: daily_avg,
+        samples: history.iter().filter(|d| d.cost.is_some()).count(),
+        days_span: days,
         balance,
         days_left,
         exhausted_date,
     }))
+}
+
+/// 计算指定 Provider 的消耗预测（Tauri command 包装）。
+#[tauri::command]
+pub fn get_prediction(
+    db: State<'_, Db>,
+    provider_id: i64,
+    days: Option<u64>,
+) -> Result<Option<Prediction>, AppError> {
+    predict_for(&db, provider_id, days.unwrap_or(7))
 }
 
 /// 额度提醒级别（mission.md §11：>50% 正常 / <30% 黄 / <10% 红）。
@@ -274,13 +337,28 @@ pub enum AlertLevel {
     Critical, // <10%
 }
 
-/// 根据剩余百分比计算提醒级别。
-pub fn alert_level_for(remaining_percent: Option<f64>) -> AlertLevel {
-    match remaining_percent {
-        Some(p) if p < 10.0 => AlertLevel::Critical,
-        Some(p) if p < 30.0 => AlertLevel::Warning,
-        _ => AlertLevel::None,
+/// 根据剩余百分比与预测剩余天数计算提醒级别。
+/// V0.5 复审 P1：remaining 存在时以百分比为准（额度充足则不提醒，不回落天数）；
+/// 无 remaining 时用预测剩余天数兜底（<3 天红 / <7 天黄）。
+pub fn alert_level_for(remaining_percent: Option<f64>, days_left: Option<f64>) -> AlertLevel {
+    if let Some(p) = remaining_percent {
+        if p < 10.0 {
+            return AlertLevel::Critical;
+        }
+        if p < 30.0 {
+            return AlertLevel::Warning;
+        }
+        return AlertLevel::None; // 百分比正常即不再看天数（百分比优先）
     }
+    if let Some(d) = days_left {
+        if d < 3.0 {
+            return AlertLevel::Critical;
+        }
+        if d < 7.0 {
+            return AlertLevel::Warning;
+        }
+    }
+    AlertLevel::None
 }
 
 /// 提醒去重状态（provider_id → 上次级别），级别提升才通知。
@@ -288,29 +366,50 @@ pub fn alert_level_for(remaining_percent: Option<f64>) -> AlertLevel {
 pub struct AlertState(pub std::sync::Mutex<std::collections::HashMap<i64, AlertLevel>>);
 
 /// 刷新成功后检查额度并发送系统通知（mission.md §11）。
+/// 判定：优先 remaining 百分比；无百分比时用预测剩余天数（days_left）。
 /// 仅在级别提升（None→Warning/Critical、Warning→Critical）时通知，恢复后重置。
 pub fn check_alerts(
     app: &tauri::AppHandle,
     state: &AlertState,
     provider: &crate::providers::ProviderConfig,
     usage: &ProviderUsage,
+    days_left: Option<f64>,
 ) {
-    let level = alert_level_for(usage.remaining);
+    let level = alert_level_for(usage.remaining, days_left);
     let mut map = state.0.lock().unwrap();
     let prev = map.get(&provider.id).copied().unwrap_or(AlertLevel::None);
     if level > prev {
         if level != AlertLevel::None {
             use tauri_plugin_notification::NotificationExt;
-            let pct = usage.remaining.unwrap_or(0.0);
             let (title, body) = match level {
-                AlertLevel::Critical => (
-                    "AI API Monitor：额度严重不足",
-                    format!("{} 剩余额度不足 10%（{:.1}%）", provider.name, pct),
-                ),
-                AlertLevel::Warning => (
-                    "AI API Monitor：额度偏低",
-                    format!("{} 剩余额度低于 30%（{:.1}%）", provider.name, pct),
-                ),
+                AlertLevel::Critical => match usage.remaining {
+                    Some(p) => (
+                        "AI API Monitor：额度严重不足",
+                        format!("{} 剩余额度不足 10%（{:.1}%）", provider.name, p),
+                    ),
+                    None => (
+                        "AI API Monitor：额度严重不足",
+                        format!(
+                            "{} 预计剩余不足 3 天（{:.1} 天）",
+                            provider.name,
+                            days_left.unwrap_or(0.0)
+                        ),
+                    ),
+                },
+                AlertLevel::Warning => match usage.remaining {
+                    Some(p) => (
+                        "AI API Monitor：额度偏低",
+                        format!("{} 剩余额度低于 30%（{:.1}%）", provider.name, p),
+                    ),
+                    None => (
+                        "AI API Monitor：额度偏低",
+                        format!(
+                            "{} 预计剩余不足 7 天（{:.1} 天）",
+                            provider.name,
+                            days_left.unwrap_or(0.0)
+                        ),
+                    ),
+                },
                 AlertLevel::None => return,
             };
             let _ = app
@@ -508,12 +607,45 @@ mod tests {
     #[test]
     fn alert_level_thresholds() {
         use super::AlertLevel;
-        assert_eq!(super::alert_level_for(None), AlertLevel::None);
-        assert_eq!(super::alert_level_for(Some(50.0)), AlertLevel::None);
-        assert_eq!(super::alert_level_for(Some(30.0)), AlertLevel::None); // 边界 30% 属正常
-        assert_eq!(super::alert_level_for(Some(29.9)), AlertLevel::Warning);
-        assert_eq!(super::alert_level_for(Some(10.0)), AlertLevel::Warning); // 边界 10% 属警告
-        assert_eq!(super::alert_level_for(Some(9.9)), AlertLevel::Critical);
+        assert_eq!(super::alert_level_for(None, None), AlertLevel::None);
+        assert_eq!(super::alert_level_for(Some(50.0), None), AlertLevel::None);
+        assert_eq!(super::alert_level_for(Some(30.0), None), AlertLevel::None); // 边界 30% 属正常
+        assert_eq!(super::alert_level_for(Some(29.9), None), AlertLevel::Warning);
+        assert_eq!(super::alert_level_for(Some(10.0), None), AlertLevel::Warning); // 边界 10% 属警告
+        assert_eq!(super::alert_level_for(Some(9.9), None), AlertLevel::Critical);
+        // 无百分比时按预测剩余天数兜底（V0.5 复审 P1）
+        assert_eq!(super::alert_level_for(None, Some(2.9)), AlertLevel::Critical);
+        assert_eq!(super::alert_level_for(None, Some(5.0)), AlertLevel::Warning);
+        assert_eq!(super::alert_level_for(None, Some(7.0)), AlertLevel::None); // 边界 7 天属正常
+        assert_eq!(super::alert_level_for(None, None), AlertLevel::None);
+        // 百分比优先于天数
+        assert_eq!(super::alert_level_for(Some(50.0), Some(2.0)), AlertLevel::None);
+    }
+
+    #[test]
+    fn history_window_is_inclusive_of_today() {
+        // V0.5 复审 P1：N 天窗口 = -(N-1) 天，避免多取一天
+        assert_eq!(super::history_start_offset(7), "-6 days");
+        assert_eq!(super::history_start_offset(30), "-29 days");
+        assert_eq!(super::history_start_offset(1), "-0 days");
+        assert_eq!(super::history_start_offset(0), "-0 days"); // saturating
+    }
+
+    #[test]
+    fn daily_avg_uses_only_valid_cost_samples() {
+        use super::DailyUsage;
+        let mk = |cost: Option<f64>| DailyUsage {
+            date: "2025-08-01".into(),
+            tokens: 0,
+            today_tokens: None,
+            cost,
+            balance: None,
+        };
+        // 有效样本 2 个（1.0 + 3.0）/2 = 2.0；NULL 视为未知不参与
+        let h = vec![mk(Some(1.0)), mk(None), mk(Some(3.0))];
+        assert!((super::daily_avg_from(&h) - 2.0).abs() < 1e-9);
+        // 全 NULL → 0
+        assert_eq!(super::daily_avg_from(&[mk(None)]), 0.0);
     }
 
     #[test]
@@ -606,12 +738,19 @@ mod codex_url_tests {
 fn record_usage(db: &Db, provider: &ProviderConfig, usage: &ProviderUsage) -> Result<(), AppError> {
     let date = Utc::now().format("%Y-%m-%d").to_string();
     let raw = serde_json::to_string(usage).unwrap_or_default();
+    // V0.5 口径：tokens=累计快照（兼容历史）；today_tokens=当日输入+输出（0 或未知写 NULL）；
+    // cost 为 None（平台不提供费用）时落 NULL，不再伪装成 0。
+    let today_tokens = {
+        let today = usage.input_tokens.saturating_add(usage.output_tokens);
+        if today > 0 { Some(today as i64) } else { None }
+    };
     db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO usage_history (provider_id, date, tokens, cost, balance, raw_json, created_time)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO usage_history (provider_id, date, tokens, today_tokens, cost, balance, raw_json, created_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(provider_id, date) DO UPDATE SET
                tokens = excluded.tokens,
+               today_tokens = excluded.today_tokens,
                cost = excluded.cost,
                balance = excluded.balance,
                raw_json = excluded.raw_json",
@@ -619,7 +758,8 @@ fn record_usage(db: &Db, provider: &ProviderConfig, usage: &ProviderUsage) -> Re
                 provider.id,
                 date,
                 usage.total_tokens as i64,
-                usage.today_cost.unwrap_or(0.0),
+                today_tokens,
+                usage.today_cost,
                 usage.balance,
                 raw,
                 Utc::now().to_rfc3339(),

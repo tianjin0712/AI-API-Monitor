@@ -87,6 +87,32 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.pragma_update(None, "user_version", version)?;
     }
 
+    if version < 4 {
+        // V4: usage_history 增加 today_tokens（当日 Token，可空=未知）；
+        // cost 允许 NULL（不再把"未提供费用"伪装成 0）——重建表迁移。
+        conn.execute_batch(
+            "ALTER TABLE usage_history RENAME TO usage_history_old;
+             CREATE TABLE usage_history (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id  INTEGER NOT NULL,
+                date         TEXT    NOT NULL,              -- YYYY-MM-DD
+                tokens       INTEGER NOT NULL DEFAULT 0,    -- 累计 Token 快照（兼容历史）
+                today_tokens INTEGER,                       -- 当日 Token（V0.5，NULL=未知）
+                cost         REAL,                          -- 当日费用（V0.5，NULL=未知）
+                balance      REAL,
+                raw_json     TEXT,
+                created_time TEXT    NOT NULL,
+                FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+             );
+             INSERT INTO usage_history (id, provider_id, date, tokens, today_tokens, cost, balance, raw_json, created_time)
+               SELECT id, provider_id, date, tokens, NULL, cost, balance, raw_json, created_time FROM usage_history_old;
+             DROP TABLE usage_history_old;
+             CREATE UNIQUE INDEX idx_usage_provider_date ON usage_history (provider_id, date);",
+        )?;
+        version = 4;
+        conn.pragma_update(None, "user_version", version)?;
+    }
+
     Ok(())
 }
 
@@ -101,7 +127,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
             .unwrap()
@@ -122,6 +148,6 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 3);
+        assert_eq!(version, 4);
     }
 }

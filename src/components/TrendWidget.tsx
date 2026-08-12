@@ -17,19 +17,28 @@ export default function TrendWidget({ providers }: Props) {
   const effectiveId =
     selectedId ?? providers[0]?.id ?? null;
 
+  // P2：Provider 被删除后校验 selectedId，不存在则重置并清空旧数据
+  useEffect(() => {
+    if (selectedId !== null && !providers.some((p) => p.id === selectedId)) {
+      setSelectedId(null);
+      setHistory([]);
+      setPrediction(null);
+      setError(null);
+    }
+  }, [providers, selectedId]);
+
   const load = useCallback(async () => {
     if (effectiveId === null) return;
     setError(null);
-    try {
-      const [h, p] = await Promise.all([
-        api.getUsageHistory(effectiveId, 30),
-        api.getPrediction(effectiveId),
-      ]);
-      setHistory(h);
-      setPrediction(p);
-    } catch (e) {
-      setError(String(e));
-    }
+    // P2：历史/预测独立降级（Promise.allSettled），一方失败不阻塞另一方
+    const [h, p] = await Promise.allSettled([
+      api.getUsageHistory(effectiveId, 30),
+      api.getPrediction(effectiveId),
+    ]);
+    if (h.status === "fulfilled") setHistory(h.value);
+    else setError(`历史加载失败: ${h.reason}`);
+    if (p.status === "fulfilled") setPrediction(p.value);
+    else setError((e) => (e ? `${e}；预测加载失败: ${p.reason}` : `预测加载失败: ${p.reason}`));
   }, [effectiveId]);
 
   useEffect(() => {
@@ -38,19 +47,21 @@ export default function TrendWidget({ providers }: Props) {
 
   if (providers.length === 0) return null;
 
-  const values = history
-    .map((d) => (metric === "tokens" ? d.tokens : d.cost))
-    .filter((v) => Number.isFinite(v) && v >= 0);
-  const max = Math.max(...values, 1);
-
-  // SVG 折线路径（viewBox 100x40，比例缩放）
-  const points = history.map((d, i) => {
-    const v = metric === "tokens" ? d.tokens : d.cost;
-    const x = history.length > 1 ? (i / (history.length - 1)) * 100 : 50;
-    const y = 38 - (Math.max(0, Math.min(v, max)) / max) * 34;
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  // P2：统一生成已校验数据点（拒绝 NaN/负值/未知），max 与绘制共用同一集合
+  const series = history
+    .map((d, i) => {
+      const v = metric === "tokens" ? d.todayTokens : d.cost;
+      if (v === null || v === undefined || !Number.isFinite(v) || v < 0) return null;
+      return { index: i, value: v };
+    })
+    .filter((p): p is { index: number; value: number } => p !== null);
+  const max = series.length > 0 ? Math.max(...series.map((p) => p.value), 1) : 1;
+  const points = series.map(({ index, value }) => {
+    const x = history.length > 1 ? (index / (history.length - 1)) * 100 : 50;
+    const y = 38 - (Math.min(value, max) / max) * 34;
+    return { x, y };
   });
-  const polyline = points.join(" ");
+  const polyline = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
   return (
     <section className="glass p-4">
@@ -97,19 +108,16 @@ export default function TrendWidget({ providers }: Props) {
               strokeWidth="0.8"
               vectorEffect="non-scaling-stroke"
             />
-            {points.map((p, i) => {
-              const [x, y] = p.split(",").map(Number);
-              return (
-                <circle
-                  key={i}
-                  cx={x}
-                  cy={y}
-                  r="0.7"
-                  fill="var(--color-accent)"
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
+            {points.map((p, i) => (
+              <circle
+                key={i}
+                cx={p.x}
+                cy={p.y}
+                r="0.7"
+                fill="var(--color-accent)"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
           </svg>
         ) : (
           <p className="py-6 text-center text-[11px] text-text-muted">
@@ -135,6 +143,11 @@ export default function TrendWidget({ providers }: Props) {
             value={prediction.exhaustedDate ?? "—"}
           />
         </div>
+      )}
+      {prediction && prediction.samples > 0 && (
+        <p className="mt-1.5 text-[10px] text-text-muted">
+          基于近 {prediction.daysSpan} 天中 {prediction.samples} 个有效费用样本。
+        </p>
       )}
       {!prediction && !error && history.length > 0 && (
         <p className="mt-2 text-[10px] text-text-muted">

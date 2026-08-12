@@ -91,14 +91,22 @@ export interface Layout {
 /** 单日用量（历史序列数据点） */
 export interface DailyUsage {
   date: string;
+  /** 累计 Token 快照（兼容历史，非当日趋势指标） */
   tokens: number;
-  cost: number;
+  /** 当日 Token（null=平台不提供/未知） */
+  todayTokens: number | null;
+  /** 当日费用（null=平台不提供/未知，不伪装成 0） */
+  cost: number | null;
   balance: number | null;
 }
 
 /** 消耗预测 */
 export interface Prediction {
   dailyCostAvg: number;
+  /** 参与平均的有效费用样本数 */
+  samples: number;
+  /** 覆盖天数跨度 */
+  daysSpan: number;
   balance: number | null;
   daysLeft: number | null;
   exhaustedDate: string | null;

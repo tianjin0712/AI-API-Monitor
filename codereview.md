@@ -411,6 +411,25 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 7：V0.5 复审修复（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P1：Token 历史混用区间累计值与当日值 | ✅ 已修复 | db 迁移 V4：usage_history 新增 `today_tokens`（可空）；`record_usage` 写当日输入+输出（0/未知写 NULL）；趋势图改用当日 Token；累计值保留在 `tokens`（快照） |
+| P1：日期窗口多取一天、预测固定 /7 | ✅ 已修复 | `history_start_offset(days)=-(days-1)`（含今天 N 天，7/30/1/0 边界测试）；`daily_avg_from` 按有效费用样本日均（NULL 不参与），返回 samples/days_span |
+| P1：费用缺失被写成 0 | ✅ 已修复 | `usage_history.cost` 允许 NULL（V4 重建表）；`record_usage` 费用缺失写 NULL；`DailyUsage.cost` 为 `Option<f64>`；预测/趋势只用真实样本 |
+| P1：提醒只读 remaining，多数平台不触发 | ✅ 已修复 | `alert_level_for` 双阈值：remaining 存在时百分比优先；无 remaining 用预测剩余天数（<3 红 / <7 黄）；refresh 后 `predict_for` 计算 days_left；通知文案区分百分比/天数 |
+| P2：TrendWidget 三处 | ✅ 已修复 | ① Provider 删除后校验 selectedId 重置并清空；② `Promise.allSettled` 历史/预测独立降级；③ 统一已校验点集（拒 null/NaN/负值，max 与绘制共用） |
+| P2：自绘菜单键盘不完整 | ✅ 已修复 | roving focus：方向键循环 / Home / End / Enter / Space 选择 / Escape 关闭；打开聚焦当前项，选择与 Escape 归还焦点到 trigger |
+| P2：README 未披露 V0.5 状态 | ✅ 已修复 | 新增 V0.5-alpha 章节（趋势/预测/提醒 + 已知限制：适用范围、多日数据、通知授权）；路线图更新 |
+
+### 测试状态更新
+
+- `cargo test`：**42 passed / 0 failed**（新增 history_window_is_inclusive_of_today、daily_avg_uses_only_valid_cost_samples、alert_level days_left 兜底）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -613,3 +632,111 @@ V0.4 已建立四个平台的注册与 UI 接入骨架，Claude 的 Usage/Cost �
 3. 在无可用查询方案前从可添加列表移除 Gemini，避免无意义保存 API Key。
 4. 将 SiliconFlow 缺失/非法余额改为显式失败。
 5. 稳定 Provider 下拉顺序并更新 README。
+# 代码复审：V0.5 与设置控件（2026-08-12 23:09:26 +08:00）
+
+审查基线：提交 `3bfce46`（V0.5 高级统计）与 `136a67a`，同时复核 Provider 圆角选择面板、圆形 Always On Top 控件。工作区审查前为干净状态。
+
+## 结论
+
+设置页视觉整改已达到目标：Provider 面板为黑底白字、圆角自绘菜单，Always On Top 使用圆形控件；点击外部与 Escape 关闭也已实现。但自绘菜单的键盘交互还不完整。
+
+V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构建，现有测试全部通过；不过当前历史数据口径与预测日期边界不足以支撑“准确趋势/预测”的验收。最关键的问题是 `usage_history.tokens` 并非统一的单日 Token 指标，以及 SQL 日期窗口存在多取一天、预测仍固定除以 7 的偏差。
+
+验证结果：
+
+- `pnpm build`：通过。
+- `cargo test`：40 passed，0 failed。
+- `git diff --check`：通过。
+- 未进行真实系统通知、真实多日数据或桌面键盘交互测试。
+
+## 发现的问题
+
+### P1：Token 历史混用了“区间累计值”和“当日值”，趋势不可横向解释
+
+- 位置：`src-tauri/src/commands.rs:605-624`，`src-tauri/src/providers/openai.rs:117-124`，`src-tauri/src/providers/claude.rs:144-151`。
+- `record_usage` 直接把 `usage.total_tokens` 写入当天 `tokens`。但统一结构没有规定该字段的时间口径：OpenAI/Claude 查询的是一段日期范围后合计，OpenRouter/SiliconFlow 为 0，其他 Provider 也未必提供当日 Token。
+- 结果是趋势图名为 Token 历史，实际可能展示“每次刷新时近 30 天累计量”的每日快照；它不是每日 Token 消耗，折线变化也不能代表当天趋势。
+- 应给统一模型增加明确的 `today_tokens`，或按 Provider 日 bucket 计算当天值后入库。若保存累计值，应改列名和 UI 文案为“累计 Token 快照”，并通过相邻日期差分生成日消耗。
+
+### P1：历史查询日期边界多取一天，预测除数却固定为 7
+
+- 位置：`src-tauri/src/commands.rs:195-222,244-248`。
+- SQL 条件 `date >= date('now', '-{days} days')` 是包含边界的。传入 30 时会覆盖“今天 + 前 30 天”，最多 31 个日期；传入 7 时最多 8 个日期。
+- `get_prediction` 随后无论取到多少日期都执行 `total_cost / 7.0`。当边界日期有记录时会高估日均；当历史不足或有空白日时，又可能按另一种口径低估。
+- 应使用 `-(days - 1) days` 形成包含今天的 N 天窗口，并明确预测是“自然日平均”还是“有数据日平均”。建议把日期区间计算提取为可测试函数，并用临时 SQLite 数据测试 7/30 天边界。
+
+### P1：费用缺失被写成 0，预测无法区分真实零消费和 Provider 不支持
+
+- 位置：`src-tauri/src/commands.rs:622`。
+- `usage.today_cost.unwrap_or(0.0)` 会将“不提供费用指标”落库成真实 0。V0.5 随后把这些 0 用于日均费用和耗尽预测。
+- 这会把 SiliconFlow 等余额型但无费用数据的平台解释为“当日零消费”，而不是“未知”；预测提示也无法说明数据不可用。
+- 数据库 `cost` 应允许 `NULL`，`DailyUsage.cost` 应为 `Option<f64>`；预测只应使用真实费用数据，并向 UI展示有效样本数/时间范围。
+
+### P1：提醒只读取 `remaining`，大部分 Provider 永远不会触发额度预警
+
+- 位置：`src-tauri/src/commands.rs:277-325` 及各 Provider 字段映射。
+- `check_alerts` 只根据 `usage.remaining` 判断百分比。目前主要只有 Codex 映射该字段；OpenRouter/SiliconFlow/DeepSeek 返回的是绝对余额，OpenAI/Claude通常没有余额百分比。
+- 因此“自动提醒已实现”只适用于能够直接提供剩余百分比的平台，不能作为通用 Provider 能力宣称。
+- 应在 Provider 能提供额度上限时计算百分比，或将提醒配置区分为百分比阈值、绝对余额阈值和预测剩余天数阈值；UI/README 需明确适用范围。
+
+### P2：趋势组件在 Provider 删除后可能继续查询旧 ID
+
+- 位置：`src/components/TrendWidget.tsx:12-31`。
+- `effectiveId = selectedId ?? providers[0]?.id` 不检查 `selectedId` 是否仍存在于最新 Provider 列表。用户选中某账户后删除它，组件仍会查询已删除 ID 的历史和预测。
+- `get_usage_history` 可能继续返回残留历史，而预测也会基于旧账户数据展示；选择框的当前 value 同时不再对应任何 option。
+- 应在 providers 更新时校验选择项，不存在则重置到首个可用账户，并清空旧 history/prediction。
+
+### P2：历史与预测使用 `Promise.all`，单项失败会丢失另一项可用结果
+
+- 位置：`src/components/TrendWidget.tsx:20-31`。
+- 历史查询成功但预测失败时，整个 `Promise.all` 进入 catch，成功历史不会写入状态；反之亦然。一次预测错误会让趋势图也无法更新。
+- 应分别处理两项请求，或使用 `Promise.allSettled`，让趋势与预测独立降级，并避免继续展示上一次成功请求的陈旧数据。
+
+### P2：折线过滤最大值与绘制数据不是同一集合
+
+- 位置：`src/components/TrendWidget.tsx:41-55`。
+- `max` 只对有限且非负值过滤，但 `points` 仍遍历原始 `history`。如果数据库或序列化出现 `NaN`/负数异常，可能生成无效 SVG 坐标或把负数强制压到 0，却没有错误提示。
+- 后端应拒绝非有限/负费用数据，前端应先生成统一的已校验点集，再同时用于最大值和折线。
+
+### P2：自绘 Provider 菜单缺少完整 listbox 键盘语义
+
+- 位置：`src/pages/Settings.tsx:199-238`。
+- 当前可用鼠标、Tab 和 Escape，但触发按钮不支持 ArrowDown/ArrowUp/Enter 选择；展开后也不会自动聚焦当前选项。`role=listbox/option` 暗示了原生 listbox 键盘行为，实际没有实现。
+- 应实现 roving focus：展开时聚焦当前项，上下方向键移动，Enter/Space 选择，Home/End 跳转，Escape 关闭并把焦点归还触发按钮。否则可改用无障碍组件库或保留原生 select。
+
+### P2：V0.5 文档状态仍停留在路线图
+
+- 位置：`README.md` 路线图及功能章节。
+- README 仍把 V0.5 列为未来计划，没有说明趋势/预测/提醒已经进入实现，也没有披露提醒仅对 `remaining` 百分比有效、历史至少需要多日刷新等限制。
+- 应新增 V0.5 Alpha 章节，避免提交记录宣称“已实现”而用户文档仍描述为未来功能。
+
+## 控件审查结果
+
+| 项目 | 状态 | 说明 |
+| --- | --- | --- |
+| 下拉面板黑底白字 | 通过 | 自绘面板不再依赖 Windows 原生 select 配色。 |
+| 面板与选项圆角 | 通过 | 面板 12px、选项 8px，且 `overflow: hidden`。 |
+| 圆形复选框 | 通过 | 自绘圆环/圆点，包含 hover 与 focus-visible。 |
+| 点击外部关闭 | 通过 | document pointerdown + ref 范围判断。 |
+| Escape 关闭 | 基本通过 | 触发按钮获得焦点时可关闭；选项获得焦点时事件冒泡同样可到父级范围，但未统一归还焦点。 |
+| 完整键盘选择 | 未完成 | 缺方向键、Home/End、展开聚焦和 roving focus。 |
+
+## V0.5 状态判断
+
+| 能力 | 状态 | 审查结论 |
+| --- | --- | --- |
+| 历史查询 | 基本实现 | SQL/命令链路存在，但日期窗口多取一天，缺少边界测试。 |
+| Token 趋势 | 不可准确验收 | 入库字段时间口径不统一。 |
+| 费用趋势 | 部分可用 | 有费用的平台可展示；未知费用被伪装为 0。 |
+| 耗尽预测 | 不可准确验收 | 日期除数偏差、未知费用语义丢失，缺公式测试。 |
+| 自动提醒 | 部分可用 | 仅直接提供 `remaining` 百分比的平台有效。 |
+| 系统通知 | 待桌面验证 | 权限已加入，但未验证首次权限、实际弹窗和失败反馈。 |
+| 自动化测试 | 不足 | 40 个 Rust 测试通过，但 V0.5 仅覆盖提醒阈值，没有 SQL、预测、趋势组件测试。 |
+
+## 建议修复顺序
+
+1. 明确并修复历史 Token/费用的数据口径，保留未知值而不是写 0。
+2. 修复 N 天日期窗口与预测公式，增加临时数据库边界测试。
+3. 明确提醒适用平台，并补绝对余额/预测天数阈值策略。
+4. 修复 TrendWidget 删除账户、并发请求降级和异常数据处理。
+5. 补齐自绘菜单键盘行为并更新 README 的 V0.5 Alpha 状态。
