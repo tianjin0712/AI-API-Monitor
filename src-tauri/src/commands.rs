@@ -254,7 +254,12 @@ async fn fetch_usage(
     let adapter = manager
         .get(&provider.provider_type)
         .ok_or_else(|| AppError::Invalid(format!("不支持的 Provider 类型: {}", provider.provider_type)))?;
-    let api_key = SecureStorage::get_api_key(&provider.key_ref)?;
+    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不走 keyring
+    let api_key = if provider.provider_type == "codex" {
+        String::new()
+    } else {
+        SecureStorage::get_api_key(&provider.key_ref)?
+    };
     adapter
         .fetch_usage(provider, &api_key)
         .await

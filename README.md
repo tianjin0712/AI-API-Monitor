@@ -16,7 +16,9 @@
 
 ### V0.1 基础版本
 
-- ✅ 多 Provider 统一管理（DeepSeek、OpenAI；类型可扩展）
+- ✅ 多 Provider 统一管理（DeepSeek、OpenAI、**Codex（ChatGPT 订阅额度）**；类型可扩展）
+- ✅ Codex：复用 Codex CLI 登录态（`~/.codex/auth.json`）查询订阅剩余额度与重置时间
+  （经 `chatgpt.com/backend-api/codex/wham/rate-limit-reset-credits`，需网络可达 chatgpt.com）
 - ✅ Dashboard 卡片：余额、Token 用量、今日消耗、更新时间、进度条、逐账户失败状态
 - ✅ Settings 页：添加 / 编辑 / 删除 API 账户
 - ✅ 刷新策略：前台 10s / 后台 60s / 手动刷新 / 窗口聚焦立即刷新（单飞防重叠）

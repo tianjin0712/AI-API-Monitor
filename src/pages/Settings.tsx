@@ -25,7 +25,11 @@ const EMPTY_FORM: FormState = {
 const TYPE_PRESETS: Record<string, string> = {
   deepseek: "https://api.deepseek.com",
   openai: "https://api.openai.com/v1",
+  codex: "https://chatgpt.com/backend-api/codex",
 };
+
+/** 使用 CLI 本地凭证的类型（无需输入 API Key） */
+const NO_API_KEY_TYPES = new Set(["codex"]);
 
 /** 设置页：Provider 增删改查 + 刷新策略 */
 export default function Settings() {
@@ -84,13 +88,17 @@ export default function Settings() {
       setError("请填写名称与 API URL");
       return;
     }
+    if (
+      form.id === null &&
+      !NO_API_KEY_TYPES.has(form.providerType) &&
+      !form.apiKey.trim()
+    ) {
+      setError("新增账户必须填写 API Key");
+      return;
+    }
     setSaving(true);
     try {
       if (form.id === null) {
-        if (!form.apiKey.trim()) {
-          setError("新增账户必须填写 API Key");
-          return;
-        }
         await api.addProvider({
           name: form.name,
           providerType: form.providerType,
@@ -196,19 +204,29 @@ export default function Settings() {
             />
           </label>
           <label className="col-span-2 text-[12px] text-text-secondary">
-            API Key
-            <span className="ml-2 text-[10px] text-text-muted">
-              {form.id === null
-                ? "加密保存至系统凭据库，绝不落库"
-                : "留空表示不修改"}
-            </span>
-            <input
-              className="input mt-1"
-              type="password"
-              value={form.apiKey}
-              placeholder={form.id === null ? "sk-..." : "输入新 Key 以替换"}
-              onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
-            />
+            {NO_API_KEY_TYPES.has(form.providerType) ? (
+              <span className="block rounded-lg border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[11px] text-text-primary">
+                {form.providerType === "codex"
+                  ? "Codex 无需 API Key：自动复用 Codex CLI 登录态（~/.codex/auth.json），请确保已运行 `codex login` 登录 ChatGPT。"
+                  : "此类型无需 API Key"}
+              </span>
+            ) : (
+              <>
+                API Key
+                <span className="ml-2 text-[10px] text-text-muted">
+                  {form.id === null
+                    ? "加密保存至系统凭据库，绝不落库"
+                    : "留空表示不修改"}
+                </span>
+                <input
+                  className="input mt-1"
+                  type="password"
+                  value={form.apiKey}
+                  placeholder={form.id === null ? "sk-..." : "输入新 Key 以替换"}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                />
+              </>
+            )}
           </label>
           {form.providerType === "openai" && (
             <p className="col-span-2 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">

@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod codex;
 pub mod deepseek;
 pub mod openai;
 
@@ -97,6 +98,7 @@ impl ProviderManager {
         let mut registry: HashMap<String, Box<dyn ProviderAdapter>> = HashMap::new();
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
+        registry.insert("codex".into(), Box::new(codex::CodexProvider));
         Self { registry }
     }
 

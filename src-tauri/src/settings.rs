@@ -98,12 +98,17 @@ pub fn add_provider(
     if provider_type.is_empty() {
         return Err(AppError::Invalid("Provider 类型不能为空".into()));
     }
-    if api_key.is_empty() {
+    if api_key.is_empty() && provider_type != "codex" {
         return Err(AppError::Invalid("API Key 不能为空".into()));
     }
     validate_provider_input(manager, provider_type, api_url)?;
-    let key_id = SecureStorage::gen_key_id();
-    let key_ref = SecureStorage::save_api_key(&key_id, api_key)?;
+    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不写入 keyring
+    let key_ref = if api_key.is_empty() {
+        format!("{}:cli_local", crate::storage::KEYRING_SERVICE_PUB)
+    } else {
+        let key_id = SecureStorage::gen_key_id();
+        SecureStorage::save_api_key(&key_id, api_key)?
+    };
     let now = Utc::now().to_rfc3339();
     let insert = db.with_conn(|conn| {
         conn.execute(
