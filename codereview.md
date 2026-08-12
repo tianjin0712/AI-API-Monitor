@@ -448,6 +448,22 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 9：V0.5 复审二次遗留（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P1：OpenAI 今日费用仍取最后 bucket（未按日期筛） | ✅ 已修复 | `CostBucket` 增加 `aggregation_timestamp`（`alias=start_time` 双兼容，修复 fixture 字段名不一致导致的静默全过滤）；`today_cost` 改为按 UTC 日期筛今日 bucket 求和，今日无 bucket 时 `None`（不再 `costs_data.last()`） |
+| P1：Claude 无今日费用 bucket 时误存 Some(0) | ✅ 已修复 | 今日费用桶为空时 `today_cost=None`（未知），非空才 `Some(day_cents/100)`（含真实 0）；`day_cents` 提取为纯函数 |
+| P2：OpenAI 今日 Token 只聚合第一个 bucket | ✅ 已修复 | 改为 fold 累加全部同日 bucket（input/output/cached），`today_tokens=Some(合并值)`；分页拆分的同日多条记录全部合并 |
+| P2：V3→V4 迁移测试未模拟外键/级联删除 | ✅ 已修复 | 新增 `migration_v3_to_v4_preserves_foreign_key_cascade`：手动建含 `FOREIGN KEY ON DELETE CASCADE` 的 V3 表，migrate 后删除 provider 断言 usage_history 级联清空（`pragma foreign_keys=ON`） |
+
+### 测试状态更新
+
+- `cargo test`：**45 passed / 0 failed**（新增 alias 兼容测试 + 外键级联迁移测试）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -839,3 +855,68 @@ V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构
 | 设置控件视觉与键盘交互 | 已完成 |
 | 自动化验证 | 基本完成，缺 V3→V4 迁移与前端竞态测试 |
 | V0.5 整体验收 | 有条件通过 Alpha，不建议标记为稳定完成 |
+# 再次审计：V0.5 整改完成度（2026-08-12 23:40:28 +08:00）
+
+审查基线：提交 `49a2238`（V0.5 复审遗留修复）与 `507e0c3`。本轮重新阅读 Provider、历史入库、预测、TrendWidget 与数据库迁移代码，并复跑全部可执行验证。
+
+## 结论
+
+上一轮列出的 6 个明确遗留项已经全部有实质代码修复：`today_tokens` 能区分真实 0 与未知、TrendWidget 会清理失败结果并防止旧请求覆盖、空图判断使用有效点数量、预测检查 Provider 存在性、V3→V4 迁移有专项数据保留测试。
+
+但是 V0.5 整改仍未完全结束。重新沿“NULL 表示未知”的目标追踪费用 Provider 后，发现 OpenAI 与 Claude 的今日费用口径仍有两个 P1 数据准确性问题；它们会进入 `usage_history.cost`，继而影响费用趋势、日均预测和天数提醒。因此当前可以确认“上一轮清单已完成”，但不能确认“V0.5 整体整改全部完成”。
+
+## 上一轮 6 项遗留核查
+
+| 遗留项 | 状态 | 代码证据 |
+| --- | --- | --- |
+| 真实 0 Token 被当 NULL | ✅ 已修复 | `ProviderUsage.today_tokens: Option<u64>`；OpenAI/Claude 有今日 bucket 时写 `Some(0+)`，无 bucket 保持 `None`；入库不再按 `>0` 猜测。 |
+| 请求失败保留旧趋势/预测 | ✅ 已修复 | rejected 分支分别 `setHistory([])`、`setPrediction(null)`。 |
+| 快速切换 Provider 的旧请求覆盖 | ✅ 已修复 | `seqRef` 递增，请求完成后只允许最新序号提交状态。 |
+| 按历史行数绘制造成空图 | ✅ 已修复 | 绘制条件改为 `series.length >= 2`。 |
+| 不存在 Provider 返回空预测 | ✅ 已修复 | `predict_for` 先查询 providers，不存在返回 `Ok(None)`。 |
+| 缺 V3→V4 迁移专项测试 | ✅ 已修复 | 新测试构造 V3 schema/旧数据，验证版本、数据、NULL、唯一索引和旧表清理。 |
+
+## 新确认的未完成问题
+
+### P1：OpenAI 今日费用仍取最后一个 bucket，未按 UTC 日期筛选
+
+- 位置：`src-tauri/src/providers/openai.rs:45-51,149-151`。
+- Usage bucket 已恢复 `aggregation_timestamp` 并按 UTC 日期筛选今日 Token；但 `CostBucket` 没有保存 bucket 时间，`today_cost` 仍使用 `costs_data.last()`。
+- 如果今天没有费用记录，最后一项可能属于昨天或更早，系统会把旧费用写入今天的 `usage_history.cost`。费用趋势、预测日均和耗尽提醒都会被污染。
+- 应在 `CostBucket` 解析 `start_time`（按官方实际字段名确认），使用与 Usage 相同的 UTC 日期过滤；无今日 bucket 时保存 `None`，有今日 bucket 且合计为 0 时保存 `Some(0)`。
+
+### P1：Claude 无今日费用 bucket 时仍保存 `Some(0)`
+
+- 位置：`src-tauri/src/providers/claude.rs:127-137,164-172`。
+- 代码已经按日期得到 `today_cost_buckets`，但无论集合是否为空都会求和并执行 `usage.today_cost = Some(day_cents / 100.0)`。
+- 这再次把“今天没有返回费用 bucket/指标未知”伪装成真实零费用，与 V4 数据库迁移和预测只使用真实样本的整改目标冲突。
+- 应仅在 `!today_cost_buckets.is_empty()` 时写 `Some(...)`，否则保持 `None`；补充“空 bucket → None、存在零值 bucket → Some(0)”单元测试。
+
+### P2：OpenAI 今日 Token 只读取第一个匹配 bucket
+
+- 位置：`src-tauri/src/providers/openai.rs:132-148`。
+- 代码先收集 `today_buckets`，却只对 `today_buckets.first()` 聚合。通常一天只有一个 bucket，但分页重复、分组或服务端异常产生多个同日 bucket 时其余数据会丢失。
+- Claude 已对所有今日 bucket 做 fold；OpenAI 应采用同样方式聚合全部匹配 bucket，避免实现语义不一致。
+
+### P2：V3→V4 迁移测试未模拟旧表外键
+
+- 位置：`src-tauri/src/db/mod.rs:155-219`。
+- 测试覆盖数据、索引和旧表清理，但手工创建的 V3 `usage_history` 缺少生产 V1 schema 中的 `FOREIGN KEY (provider_id) ... ON DELETE CASCADE`，也没有验证迁移后级联删除仍工作。
+- 当前 V4 新表代码确实重新声明了外键，因此不是已发现的运行错误；建议完善 fixture 并开启 `PRAGMA foreign_keys=ON`，用删除 Provider 验证级联行为，提升迁移测试可信度。
+
+## 验证结果
+
+- `pnpm build`：通过。
+- `cargo test`（`src-tauri`）：43 passed，0 failed。
+- `git diff --check`：通过。
+- 本轮未使用真实 Provider 凭据，未验证真实多日费用 bucket 和系统通知。
+
+## 最终判断
+
+| 判断对象 | 结果 |
+| --- | --- |
+| 上一次审计列出的 6 项整改 | 已完成 |
+| V0.5 Token 趋势整改 | 基本完成 |
+| V0.5 费用趋势/预测整改 | 未完全完成 |
+| V0.5 自动提醒 | 代码链路完成，真实通知待验证 |
+| V0.5 整体整改 | 约完成，仍需修复上述 2 个 P1 后再验收 |

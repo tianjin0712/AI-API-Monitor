@@ -168,15 +168,24 @@ impl ProviderAdapter for ClaudeProvider {
             .map(|b| b.results.iter().map(|r| parse_cents(&r.amount.value)).sum::<f64>())
             .sum();
         usage.month_cost = Some(month_cents / 100.0);
-        let day_cents: f64 = today_cost_buckets
-            .iter()
-            .flat_map(|b| b.results.iter())
-            .map(|r| parse_cents(&r.amount.value))
-            .sum();
-        usage.today_cost = Some(day_cents / 100.0);
+        // 今日费用：无今日 bucket 时 None（未知），不伪装成 Some(0)（P1）
+        usage.today_cost = if today_cost_buckets.is_empty() {
+            None
+        } else {
+            Some(day_cents(&today_cost_buckets) / 100.0)
+        };
         usage.updated_at = now.to_rfc3339();
         Ok(usage)
     }
+}
+
+/// 聚合今日费用桶的 cents 总和（纯函数，便于测试）。
+fn day_cents(buckets: &[&CostBucket]) -> f64 {
+    buckets
+        .iter()
+        .flat_map(|b| b.results.iter())
+        .map(|r| parse_cents(&r.amount.value))
+        .sum()
 }
 
 /// 解析 bucket 的 UTC 日期（优先 ending_at，回退 starting_at）；无法解析返回 None。

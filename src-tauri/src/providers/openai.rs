@@ -32,8 +32,9 @@ struct UsageResult {
 
 #[derive(Debug, Clone, Deserialize)]
 struct UsageBucket {
-    /// Unix 秒（bucket 起始）；用于按 UTC 日期精确筛"今日"
-    #[serde(default)]
+    /// Unix 秒（bucket 起始）；用于按 UTC 日期精确筛"今日"。
+    /// 兼容官方 v4 的 aggregation_timestamp 与部分响应/测试中的 start_time。
+    #[serde(default, alias = "start_time")]
     aggregation_timestamp: Option<i64>,
     #[serde(default)]
     results: Vec<UsageResult>,
@@ -50,20 +51,24 @@ struct UsageResponse {
 }
 
 // ---- 费用接口响应模型 ----
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 struct CostAmount {
     #[serde(default)]
     value: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct CostResult {
     #[serde(default)]
     amount: CostAmount,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct CostBucket {
+    /// Unix 秒（bucket 起始）；用于按 UTC 日期精确筛"今日"。
+    /// 兼容官方 v4 的 aggregation_timestamp 与部分响应/测试中的 start_time。
+    #[serde(default, alias = "start_time")]
+    aggregation_timestamp: Option<i64>,
     #[serde(default)]
     results: Vec<CostResult>,
 }
@@ -114,9 +119,19 @@ impl ProviderAdapter for OpenAIProvider {
         let usage_data = usage_data?;
         let costs_data = costs_data?;
 
-        // 今日口径（V0.5 复审）：按 bucket 的 UTC 日期精确筛今天，不再用 last()
+        // 今日口径（V0.5 复审）：按 bucket 的 UTC 日期精确筛今天，不再用 last()。
+        // 分页可能把同一 bucket 拆成多条（limit=100），必须合并全部同日 bucket。
         let today = chrono::Utc::now().date_naive();
         let today_buckets: Vec<&UsageBucket> = usage_data
+            .iter()
+            .filter(|b| {
+                b.aggregation_timestamp
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                    .map(|dt| dt.date_naive() == today)
+                    .unwrap_or(false)
+            })
+            .collect();
+        let today_cost_buckets: Vec<&CostBucket> = costs_data
             .iter()
             .filter(|b| {
                 b.aggregation_timestamp
@@ -133,24 +148,36 @@ impl ProviderAdapter for OpenAIProvider {
             .iter()
             .map(|b| b.results.iter().map(|r| r.total_tokens).sum::<u64>())
             .sum();
-        if let Some(today_bucket) = today_buckets.first() {
-            usage.input_tokens = today_bucket.results.iter().map(|r| r.input_tokens).sum();
-            usage.output_tokens = today_bucket.results.iter().map(|r| r.output_tokens).sum();
-            usage.cached_tokens = today_bucket
-                .results
-                .iter()
-                .map(|r| r.input_cached_tokens)
-                .sum();
-            // 有今日 bucket 才写今日 Token（含真实 0）；无则保持 None（未知）
-            usage.today_tokens = Some(
-                usage
-                    .input_tokens
-                    .saturating_add(usage.output_tokens),
+        if !today_buckets.is_empty() {
+            // 合并全部同日 bucket（P2：不再只取 first()）
+            let (input, output, cached): (u64, u64, u64) = today_buckets.iter().fold(
+                (0, 0, 0),
+                |(si, so, sc), b| {
+                    (
+                        si + b.results.iter().map(|r| r.input_tokens).sum::<u64>(),
+                        so + b.results.iter().map(|r| r.output_tokens).sum::<u64>(),
+                        sc + b.results.iter().map(|r| r.input_cached_tokens).sum::<u64>(),
+                    )
+                },
             );
+            usage.input_tokens = input;
+            usage.output_tokens = output;
+            usage.cached_tokens = cached;
+            // 有今日 bucket 才写今日 Token（含真实 0）；无则保持 None（未知）
+            usage.today_tokens = Some(input.saturating_add(output));
         }
-        usage.today_cost = costs_data
-            .last()
-            .map(|b| b.results.iter().map(|r| r.amount.value).sum::<f64>());
+        // 今日费用：按 UTC 日期筛（P1），今日无 bucket 时 None（未知），不退回 last()
+        usage.today_cost = if today_cost_buckets.is_empty() {
+            None
+        } else {
+            Some(
+                today_cost_buckets
+                    .iter()
+                    .flat_map(|b| b.results.iter())
+                    .map(|r| r.amount.value)
+                    .sum(),
+            )
+        };
         usage.month_cost = Some(
             costs_data
                 .iter()
@@ -294,5 +321,15 @@ mod tests {
         let resp: CostsResponse = serde_json::from_str(json).expect("parse ok");
         let day_cost: f64 = resp.data[0].results.iter().map(|r| r.amount.value).sum();
         assert!((day_cost - 1.734).abs() < 1e-9);
+    }
+
+    #[test]
+    fn bucket_parses_start_time_via_alias() {
+        // 真实/测试响应可能用 start_time 而非 aggregation_timestamp（alias 双兼容）
+        let json = r#"{"start_time": 1711929600, "end_time": 1712016000, "results": []}"#;
+        let u: UsageBucket = serde_json::from_str(json).expect("usage parse ok");
+        assert_eq!(u.aggregation_timestamp, Some(1711929600));
+        let c: CostBucket = serde_json::from_str(json).expect("cost parse ok");
+        assert_eq!(c.aggregation_timestamp, Some(1711929600));
     }
 }

@@ -223,4 +223,56 @@ mod tests {
             .unwrap();
         assert_eq!(old, 0);
     }
+
+    #[test]
+    fn migration_v3_to_v4_preserves_foreign_key_cascade() {
+        // V3 旧表含外键 ON DELETE CASCADE；迁移后级联删除仍生效
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn.execute_batch(
+            "PRAGMA user_version = 3;
+             CREATE TABLE providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                key_ref TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_time TEXT NOT NULL,
+                updated_time TEXT NOT NULL
+             );
+             INSERT INTO providers (name, provider_type, api_url, key_ref, enabled, created_time, updated_time)
+               VALUES ('openai', 'openai', 'https://api.openai.com/v1', 'key_y', 1, 't', 't');
+             CREATE TABLE usage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                tokens INTEGER NOT NULL DEFAULT 0,
+                cost REAL NOT NULL DEFAULT 0,
+                balance REAL,
+                raw_json TEXT,
+                created_time TEXT NOT NULL,
+                FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+             );
+             CREATE UNIQUE INDEX idx_usage_provider_date ON usage_history (provider_id, date);
+             INSERT INTO usage_history (provider_id, date, tokens, cost, balance, raw_json, created_time)
+               VALUES (1, '2025-08-01', 100, 0.5, 10.0, '{}', 't'),
+                      (1, '2025-08-02', 200, 1.0, 9.0, '{}', 't');",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            4
+        );
+
+        // 删除 provider，usage_history 应级联清空
+        conn.execute("DELETE FROM providers WHERE id = 1", []).unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM usage_history", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0, "迁移后外键 ON DELETE CASCADE 应仍然生效");
+    }
 }
