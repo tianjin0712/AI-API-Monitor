@@ -430,6 +430,24 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 8：V0.5 复审遗留修复（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P1：真实当日 0 Token 被当成未知 NULL | ✅ 已修复 | `ProviderUsage` 新增 `today_tokens: Option<u64>`（serde default，empty=None）；openai 恢复 `aggregation_timestamp` 并按 UTC 日期筛今日 bucket（有则 `Some(含0)`，无则 None，不再 `last()`）；claude 有今日 bucket 才 Some；`record_usage` 直落该字段（不再 `>0` 推断）；其余平台保持 None |
+| P2：请求失败残留旧数据 | ✅ 已修复 | TrendWidget `allSettled` 中 rejected 时 `setHistory([])` / `setPrediction(null)` 清空 |
+| P2：快速切换账户旧请求覆盖新结果 | ✅ 已修复 | `seqRef` 请求序号，结果落地前校验 seq 丢弃过期响应 |
+| P2：趋势图按历史行数绘制可能空图 | ✅ 已修复 | 绘制条件改 `series.length >= 2`（过滤 null/NaN/负值后的有效点集） |
+| P2：不存在 Provider 返回空预测 | ✅ 已修复 | `predict_for` 先查 providers 存在性，不存在直接返回 `Ok(None)` |
+| P2：缺 V3→V4 迁移专项测试 | ✅ 已修复 | 新增 `migration_v3_to_v4_preserves_data_and_marks_today_null`：手动 V3 状态 → migrate → 断言 version=4、数据保留、today_tokens=NULL、唯一索引存在、旧表清理 |
+
+### 测试状态更新
+
+- `cargo test`：**43 passed / 0 failed**（新增 V3→V4 迁移专项测试）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -740,3 +758,84 @@ V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构
 3. 明确提醒适用平台，并补绝对余额/预测天数阈值策略。
 4. 修复 TrendWidget 删除账户、并发请求降级和异常数据处理。
 5. 补齐自绘菜单键盘行为并更新 README 的 V0.5 Alpha 状态。
+# 修复状态审计：V0.5 Review（2026-08-12 23:26:35 +08:00）
+
+审查基线：提交 `236e881`（V0.5 复审修复）与 `461397e`。本轮逐项阅读代码并运行测试，不以提交说明或 `codereview.md` 中的修复声明作为完成证据。
+
+## 结论
+
+上一轮 V0.5 Review 的主要任务已经完成：Token 历史口径、日期窗口、费用 NULL 语义、提醒适用范围、TrendWidget 删除账户处理、独立请求降级、异常点过滤、自绘菜单键盘操作和 README 均有对应的真实代码变更。项目能够构建，Rust 测试从 40 增至 42 且全部通过。
+
+但任务还不能判定为 **100% 完成**。当前没有 P0；仍有 1 个影响历史真实性的 P1，以及数个 TrendWidget 状态一致性 P2。系统通知和真实多日趋势仍缺桌面/端到端验证。
+
+## 上轮问题逐项核查
+
+| 上轮问题 | 当前状态 | 代码证据 |
+| --- | --- | --- |
+| Token 历史混用累计值与当日值 | 基本修复 | DB V4 增加 `today_tokens`；趋势使用 `todayTokens`；累计 `tokens` 仅为兼容快照。仍有“真实 0 被当未知”问题。 |
+| N 天窗口多取一天、固定除 7 | 已修复 | `history_start_offset(days)` 使用 `-(days-1)`；日均按有效费用样本数计算；增加 2 个纯函数测试。 |
+| 费用缺失被写成 0 | 已修复 | V4 将 `cost` 改为可空；`DailyUsage.cost`/前端类型为 nullable；入库直接保存 `usage.today_cost`。 |
+| 提醒只支持 `remaining` | 基本修复 | 百分比优先，无百分比时使用预测剩余天数 `<7/<3` 兜底；README 已说明适用范围。真实通知仍待验证。 |
+| 删除 Provider 后继续查询旧 ID | 已修复 | providers 变化时校验 `selectedId`，不存在则重置并清空状态。 |
+| 历史/预测单项失败相互阻塞 | 已修复 | 改用 `Promise.allSettled`，分别更新结果和错误。失败时旧值清理仍不完整。 |
+| 折线 max 与绘制集合不一致 | 已修复 | 统一 `series` 过滤 nullable、非有限值和负值，再共同计算 max 与 points。 |
+| Provider 菜单键盘语义不完整 | 已修复 | 实现展开聚焦、上下循环、Home/End、Enter/Space、Escape 和焦点归还。 |
+| README 未同步 V0.5 | 已修复 | 新增 V0.5-alpha 章节、指标口径和提醒限制。 |
+
+## 仍未完成的问题
+
+### P1：真实的当日 0 Token 被保存为 NULL
+
+- 位置：`src-tauri/src/commands.rs:741-747`。
+- 当前通过 `input_tokens + output_tokens > 0` 判断平台是否提供当日 Token。这个判断无法区分“平台提供了当日数据且今天真实使用量为 0”和“平台不提供该指标”；两种情况都落为 `NULL`。
+- 更重要的是，Provider 统一结构里的 `input_tokens/output_tokens` 仍是非可空 `u64`，无法表达指标是否存在。仅在入库层根据数值猜测，数据语义仍不完整。
+- 建议在 `ProviderUsage` 增加 `today_tokens: Option<u64>`，由各 Provider 按日 bucket 明确赋值。真实 0 保存 `Some(0)`，不支持保存 `None`；不要从 input/output 数值反推可用性。
+
+### P2：TrendWidget 请求失败时仍可能展示上一账户/上一次请求的旧结果
+
+- 位置：`src/components/TrendWidget.tsx:30-45`。
+- `load()` 开始时只清空 `error`，没有清空 `history/prediction`。若新账户历史请求失败，旧账户趋势仍显示；预测失败也会保留之前的预测卡片，同时只追加错误文字。
+- `Promise.allSettled` 已做到独立降级，但 rejected 分支应分别执行 `setHistory([])` / `setPrediction(null)`，或显示明确的 stale 状态，避免错误信息和旧数据并存。
+
+### P2：快速切换 Provider 时旧请求可能覆盖新账户结果
+
+- 位置：`src/components/TrendWidget.tsx:30-49`。
+- 每次 `effectiveId` 改变都会启动请求，但没有 request sequence、取消标志或 AbortSignal。若账户 A 请求较慢、切换到 B 后 B 先返回，A 随后仍会覆盖 B 的历史和预测。
+- 应在 effect/load 中增加递增请求 ID 或 cancelled 标志，只有当前请求可以提交状态。
+
+### P2：趋势图用 `history.length` 判断可绘制，而不是有效点数量
+
+- 位置：`src/components/TrendWidget.tsx:67-113`。
+- 当历史有 2 行但当前指标都是 `NULL` 时，`history.length >= 2` 成立，组件会渲染空 SVG，而不是“数据不足”。只有一个有效点时也会进入折线分支。
+- 应以 `series.length >= 2` 判断折线是否可绘制；横坐标可继续按原始日期索引保留缺失日期间隔。
+
+### P2：预测函数对不存在的 Provider 仍返回 `Some` 空预测
+
+- 位置：`src-tauri/src/commands.rs:268-320`。
+- `predict_for` 不验证 provider 是否存在；历史为空时仍返回 `Some(Prediction { samples: 0, balance: None, ... })`。删除账户后的短暂竞态或外部调用不会得到 `ProviderNotFound`/`None`。
+- 建议先校验 Provider，或在历史为空时返回 `Ok(None)`。前端已经为 `null` 预测设计了降级文案。
+
+### P2：V4 数据库迁移缺少从真实 V3 schema 升级的专项测试
+
+- 位置：`src-tauri/src/db/mod.rs:89-118` 及测试模块。
+- 当前 migration 测试主要验证新库创建和重复执行；没有显式构造 V3 表与旧数据，再验证升级后行数据、唯一索引、外键和 NULL 语义均保留。
+- V4 采用 rename/create/copy/drop 的重建迁移，风险高于简单 `ALTER ADD COLUMN`，应增加旧版本 fixture 测试。
+
+## 验证结果
+
+- `pnpm build`：通过。
+- `cargo test`（`src-tauri`）：42 passed，0 failed。
+- `git diff --check`：通过。
+- 审查前工作区干净；本轮仅追加 `codereview.md`。
+- 未验证：真实系统通知授权/弹窗、真实 Provider 多日数据、快速切换账户的桌面交互。
+
+## 当前完成度判断
+
+| 范围 | 判断 |
+| --- | --- |
+| 上轮 Review 的主要修复任务 | 已完成 |
+| V0.5 数据模型准确性 | 基本完成，真实 0/未知仍未严格区分 |
+| TrendWidget 状态一致性 | 未完全完成 |
+| 设置控件视觉与键盘交互 | 已完成 |
+| 自动化验证 | 基本完成，缺 V3→V4 迁移与前端竞态测试 |
+| V0.5 整体验收 | 有条件通过 Alpha，不建议标记为稳定完成 |

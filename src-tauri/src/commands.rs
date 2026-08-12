@@ -9,6 +9,7 @@ use crate::settings::{self, AppError};
 use crate::storage::SecureStorage;
 use crate::window_mode::{self, WindowMode, WindowState};
 use chrono::Utc;
+use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
@@ -272,6 +273,20 @@ pub fn daily_avg_from(history: &[DailyUsage]) -> f64 {
 /// 计算指定 Provider 的消耗预测（核心逻辑，供命令与刷新提醒复用）。
 pub fn predict_for(db: &Db, provider_id: i64, days: u64) -> Result<Option<Prediction>, AppError> {
     let days = days.clamp(1, 365);
+    // P2：Provider 不存在时返回 None（而非空预测/报错）
+    let exists: bool = db
+        .with_conn(|conn| {
+            conn.query_row(
+                "SELECT 1 FROM providers WHERE id = ?1",
+                [provider_id],
+                |_| Ok(true),
+            )
+            .optional()
+        })?
+        .unwrap_or(false);
+    if !exists {
+        return Ok(None);
+    }
     // 历史行查询（含今天的 N 天窗口）
     let history: Vec<DailyUsage> = db
         .with_conn(|conn| {
@@ -738,12 +753,9 @@ mod codex_url_tests {
 fn record_usage(db: &Db, provider: &ProviderConfig, usage: &ProviderUsage) -> Result<(), AppError> {
     let date = Utc::now().format("%Y-%m-%d").to_string();
     let raw = serde_json::to_string(usage).unwrap_or_default();
-    // V0.5 口径：tokens=累计快照（兼容历史）；today_tokens=当日输入+输出（0 或未知写 NULL）；
-    // cost 为 None（平台不提供费用）时落 NULL，不再伪装成 0。
-    let today_tokens = {
-        let today = usage.input_tokens.saturating_add(usage.output_tokens);
-        if today > 0 { Some(today as i64) } else { None }
-    };
+    // V0.5 口径：tokens=累计快照（兼容历史）；today_tokens 直接落 usage.today_tokens
+    // （Some 含真实 0；None=平台不提供）；cost 为 None 时落 NULL，不再伪装成 0。
+    let today_tokens = usage.today_tokens.map(|t| t as i64);
     db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO usage_history (provider_id, date, tokens, today_tokens, cost, balance, raw_json, created_time)

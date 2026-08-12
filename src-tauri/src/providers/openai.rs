@@ -18,7 +18,7 @@ use serde::Deserialize;
 pub struct OpenAIProvider;
 
 // ---- 用量接口响应模型 ----
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Clone, Deserialize)]
 struct UsageResult {
     #[serde(default)]
     input_tokens: u64,
@@ -30,8 +30,11 @@ struct UsageResult {
     input_cached_tokens: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct UsageBucket {
+    /// Unix 秒（bucket 起始）；用于按 UTC 日期精确筛"今日"
+    #[serde(default)]
+    aggregation_timestamp: Option<i64>,
     #[serde(default)]
     results: Vec<UsageResult>,
 }
@@ -111,6 +114,18 @@ impl ProviderAdapter for OpenAIProvider {
         let usage_data = usage_data?;
         let costs_data = costs_data?;
 
+        // 今日口径（V0.5 复审）：按 bucket 的 UTC 日期精确筛今天，不再用 last()
+        let today = chrono::Utc::now().date_naive();
+        let today_buckets: Vec<&UsageBucket> = usage_data
+            .iter()
+            .filter(|b| {
+                b.aggregation_timestamp
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0))
+                    .map(|dt| dt.date_naive() == today)
+                    .unwrap_or(false)
+            })
+            .collect();
+
         // 聚合当日与 30 天累计
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
         usage.currency = "$".into();
@@ -118,10 +133,20 @@ impl ProviderAdapter for OpenAIProvider {
             .iter()
             .map(|b| b.results.iter().map(|r| r.total_tokens).sum::<u64>())
             .sum();
-        if let Some(last) = usage_data.last() {
-            usage.input_tokens = last.results.iter().map(|r| r.input_tokens).sum();
-            usage.output_tokens = last.results.iter().map(|r| r.output_tokens).sum();
-            usage.cached_tokens = last.results.iter().map(|r| r.input_cached_tokens).sum();
+        if let Some(today_bucket) = today_buckets.first() {
+            usage.input_tokens = today_bucket.results.iter().map(|r| r.input_tokens).sum();
+            usage.output_tokens = today_bucket.results.iter().map(|r| r.output_tokens).sum();
+            usage.cached_tokens = today_bucket
+                .results
+                .iter()
+                .map(|r| r.input_cached_tokens)
+                .sum();
+            // 有今日 bucket 才写今日 Token（含真实 0）；无则保持 None（未知）
+            usage.today_tokens = Some(
+                usage
+                    .input_tokens
+                    .saturating_add(usage.output_tokens),
+            );
         }
         usage.today_cost = costs_data
             .last()

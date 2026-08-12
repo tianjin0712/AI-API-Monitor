@@ -150,4 +150,77 @@ mod tests {
             .unwrap();
         assert_eq!(version, 4);
     }
+
+    #[test]
+    fn migration_v3_to_v4_preserves_data_and_marks_today_null() {
+        // 手动构造 V3 状态（旧 usage_history 结构 + 数据），验证 V4 迁移保数据
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "PRAGMA user_version = 3;
+             CREATE TABLE providers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                provider_type TEXT NOT NULL,
+                api_url TEXT NOT NULL,
+                key_ref TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_time TEXT NOT NULL,
+                updated_time TEXT NOT NULL
+             );
+             INSERT INTO providers (name, provider_type, api_url, key_ref, enabled, created_time, updated_time)
+               VALUES ('deepseek', 'deepseek', 'https://api.deepseek.com', 'key_x', 1, 't', 't');
+             CREATE TABLE usage_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                provider_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                tokens INTEGER NOT NULL DEFAULT 0,
+                cost REAL NOT NULL DEFAULT 0,
+                balance REAL,
+                raw_json TEXT,
+                created_time TEXT NOT NULL
+             );
+             CREATE UNIQUE INDEX idx_usage_provider_date ON usage_history (provider_id, date);
+             INSERT INTO usage_history (provider_id, date, tokens, cost, balance, raw_json, created_time)
+               VALUES (1, '2025-08-01', 1000, 1.25, 42.0, '{}', 't');",
+        )
+        .unwrap();
+
+        migrate(&conn).unwrap();
+
+        // 版本推进到 4
+        let version: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 4);
+        // 数据保留：tokens/cost/balance 原样，today_tokens 为 NULL（未知）
+        let (tokens, today_tokens, cost, balance): (i64, Option<i64>, f64, f64) = conn
+            .query_row(
+                "SELECT tokens, today_tokens, cost, balance FROM usage_history WHERE id = 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(tokens, 1000);
+        assert_eq!(today_tokens, None);
+        assert!((cost - 1.25).abs() < 1e-9);
+        assert!((balance - 42.0).abs() < 1e-9);
+        // 唯一索引存在（V4 重建）
+        let idx: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_usage_provider_date'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(idx, 1);
+        // 旧表已清理
+        let old: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='usage_history_old'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(old, 0);
+    }
 }

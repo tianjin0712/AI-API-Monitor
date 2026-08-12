@@ -158,6 +158,10 @@ impl ProviderAdapter for ClaudeProvider {
             .flat_map(|b| b.results.iter())
             .map(|r| r.cache_read_input_tokens)
             .sum();
+        // 有今日 bucket 才写今日 Token（含真实 0）；无则保持 None（未知）
+        if !today_usage.is_empty() {
+            usage.today_tokens = Some(today_input.saturating_add(today_output));
+        }
         // 费用：cents → USD（÷100）；今日与近 30 天
         let month_cents: f64 = cost_data
             .iter()

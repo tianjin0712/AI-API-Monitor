@@ -30,6 +30,9 @@ pub struct ProviderUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
+    /// 当日 Token（V0.5 口径）：Some(含 0) = 平台明确提供今日值；None = 未知/不提供。
+    #[serde(default)]
+    pub today_tokens: Option<u64>,
     pub today_cost: Option<f64>,
     pub month_cost: Option<f64>,
     pub remaining: Option<f64>,
@@ -49,6 +52,7 @@ impl ProviderUsage {
             input_tokens: 0,
             output_tokens: 0,
             cached_tokens: 0,
+            today_tokens: None,
             today_cost: None,
             month_cost: None,
             remaining: None,

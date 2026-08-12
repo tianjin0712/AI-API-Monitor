@@ -31,6 +31,8 @@ export interface ProviderUsage {
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number;
+  /** 当日 Token（null=平台不提供/未知；0 为真实零消耗） */
+  todayTokens: number | null;
   todayCost: number | null;
   monthCost: number | null;
   remaining: number | null;

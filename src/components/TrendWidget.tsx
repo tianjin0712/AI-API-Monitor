@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { DailyUsage, Prediction, ProviderConfig } from "../types";
 
@@ -17,6 +17,9 @@ export default function TrendWidget({ providers }: Props) {
   const effectiveId =
     selectedId ?? providers[0]?.id ?? null;
 
+  // P2：请求序号防旧请求覆盖新结果（快速切换账户时）
+  const seqRef = useRef(0);
+
   // P2：Provider 被删除后校验 selectedId，不存在则重置并清空旧数据
   useEffect(() => {
     if (selectedId !== null && !providers.some((p) => p.id === selectedId)) {
@@ -29,16 +32,25 @@ export default function TrendWidget({ providers }: Props) {
 
   const load = useCallback(async () => {
     if (effectiveId === null) return;
+    const seq = ++seqRef.current;
     setError(null);
-    // P2：历史/预测独立降级（Promise.allSettled），一方失败不阻塞另一方
+    // P2：历史/预测独立降级（Promise.allSettled），一方失败不阻塞另一方；
+    // 失败时清空旧数据，避免继续展示上一次成功结果
     const [h, p] = await Promise.allSettled([
       api.getUsageHistory(effectiveId, 30),
       api.getPrediction(effectiveId),
     ]);
+    if (seq !== seqRef.current) return; // 已有更新请求，丢弃本次结果
     if (h.status === "fulfilled") setHistory(h.value);
-    else setError(`历史加载失败: ${h.reason}`);
+    else {
+      setHistory([]);
+      setError(`历史加载失败: ${h.reason}`);
+    }
     if (p.status === "fulfilled") setPrediction(p.value);
-    else setError((e) => (e ? `${e}；预测加载失败: ${p.reason}` : `预测加载失败: ${p.reason}`));
+    else {
+      setPrediction(null);
+      setError((e) => (e ? `${e}；预测加载失败: ${p.reason}` : `预测加载失败: ${p.reason}`));
+    }
   }, [effectiveId]);
 
   useEffect(() => {
@@ -99,7 +111,7 @@ export default function TrendWidget({ providers }: Props) {
       )}
 
       <div className="mt-2">
-        {history.length >= 2 ? (
+        {series.length >= 2 ? (
           <svg viewBox="0 0 100 40" className="h-24 w-full" preserveAspectRatio="none">
             <polyline
               points={polyline}
