@@ -64,5 +64,5 @@ export const api = {
 
   // ---- V1.0 自动更新 ----
   checkUpdate: () => invoke<UpdateInfo>("check_update"),
-  installUpdate: () => invoke<string>("install_update"),
+  installUpdate: (expectedVersion: string) => invoke<string>("install_update", { expectedVersion }),
 };

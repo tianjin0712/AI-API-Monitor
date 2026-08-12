@@ -1119,3 +1119,151 @@ V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构
 | OpenAI 多页完整性 | 不可信（P1 静默截断） |
 | 趋势/预测基础链路 | 基本实现，依赖上游数据完整性 |
 | V0.5 整体验收 | 不通过，先修分页状态机 |
+# 代码复审：当前完成任务与 V1.0 静态审查（2026-08-13 00:43:07 +08:00）
+
+审查基线：提交 `8b3bb89`（分页与预测链路修复）、`b336f0e`（V1.0 正式版）与 `e9298b4`。按用户要求，本轮只评价代码问题，不将真实账户、桌面交互或发布环境手测作为阻塞项。
+
+## 结论
+
+上一轮 V0.5 分页、预测取整和通知失败处理已完成，新增状态机测试能覆盖正常完成、重复 cursor、缺 cursor 和 URL 编码。V0.5 的主要静态代码问题可以关闭。
+
+但最新提交将项目标记为 “V1.0 正式版”并不成立。主题覆盖无法在重启后恢复；所谓插件化 Provider 只是给 OpenAI 组织级统计适配器增加 `custom` 别名；自动更新的公钥和端点仍为空。完整质量门禁也因 rustfmt 与 Clippy 失败而未通过。因此当前更准确的状态是 **V1.0 功能骨架 / Alpha**，不能按可发布正式版验收。
+
+## V0.5 上轮问题核查
+
+| 上轮问题 | 状态 | 代码证据 |
+| --- | --- | --- |
+| Claude 正常多页误报超过上限 | ✅ 已修复 | 显式 `completed` 状态；正常终止后成功返回；共享分页状态机测试覆盖。 |
+| OpenAI 5 页静默截断 | ✅ 已修复 | 上限提升为 100；触顶显式报错；重复 cursor 检测。 |
+| Cursor 未 URL 编码 | ✅ 已修复 | `next_page_url` 使用 URL query API，并有特殊字符编码测试。 |
+| Claude Cost 每日 bucket 契约 | ✅ 已修复 | 请求显式加入 `bucket_width=1d`。 |
+| 预测日期向下截断 | ✅ 已修复 | 使用 `ceil()`，增加 1.9 天边界测试。 |
+| 通知失败仍标记已通知 | ✅ 已修复 | 仅 `.show()` 成功更新 AlertState；失败保留旧状态以便重试。 |
+
+## 发现的问题
+
+### P0：主题覆盖读取时被丢弃，重启后无法恢复
+
+- 位置：`src/App.tsx:52-57`，`src/utils/layout.ts:14-55`。
+- 设置页会把 `themeOverrides` 与布局一起保存，运行时 effect 也会应用覆盖值；但启动读取布局时只执行：`setLayout({ theme: parseTheme(json), widgets: parseWidgets(json) })`。
+- `themeOverrides` 没有解析回 Layout，因此用户自定义颜色重启后全部消失。README/界面中的“随布局保存”“跨设备导入后持久化”只在当前会话成立。
+- 应新增统一的 `parseLayout`，一次解析并校验 theme、widgets、themeOverrides，避免三个字段由不同函数重复 JSON.parse；增加保存→解析→恢复的往返测试。
+
+### P1：“插件化 Provider”实际只是 OpenAI Admin API 别名，能力描述过度
+
+- 位置：`src-tauri/src/providers/mod.rs:164-173`，`src/pages/Settings.tsx:34,44`，README V1.0 章节。
+- `custom` 直接注册为 `openai::OpenAIProvider`。该适配器请求 `/organization/usage/completions` 与 `/organization/costs`，需要 OpenAI Organization Admin API 语义。
+- 普通 OpenAI-compatible 代理、国内模型接口或私有部署通常只兼容 `/chat/completions`，并不提供组织 Usage/Costs 管理端点；因此“任意 Base URL”“适用于国内代理/私有部署”会误导用户，绝大多数配置刷新必然失败。
+- 这也不是插件系统：没有动态发现、清单、独立加载、版本/权限模型或第三方扩展接口，只是编译期注册表增加一个别名。
+- 应将名称改为“自定义 OpenAI Admin API”，准确限定所需端点；若任务目标确实是插件化，需要定义 Provider manifest/schema 和独立适配器加载机制。
+
+### P1：自动更新尚未配置，却被纳入“正式版”功能
+
+- 位置：`src-tauri/tauri.conf.json:32-36`。
+- updater 的 `pubkey` 为空、`endpoints` 为空。代码虽然集成插件并提供检查/安装命令，但当前发行配置没有可用更新源，也无法验证更新签名。
+- README 已提示发布者需配置，但提交标题与 V1.0 功能表仍把自动更新标为已实现。静态代码层面只能判定为“集成骨架”，不是可用发布功能。
+- 发布前应通过环境/构建配置注入真实公钥与 HTTPS endpoint，并在 CI 校验两项非空，避免误发不可更新的正式包。
+
+### P1：主题覆盖后端不校验，前后端持久化契约不一致
+
+- 位置：`src-tauri/src/commands.rs:522-565`，`src/App.tsx:31-44`，`src/pages/Settings.tsx:644-657`。
+- 前端剪贴板导入只接受六位 hex，但后端 `validate_layout_json` 完全忽略 `themeOverrides`。加载后 App 会遍历任意 key/value 并写入根元素 `--color-${key}`。
+- 这不会直接执行脚本，但会允许持久化任意 CSS 变量名和值，绕过主题导入的白名单和色值限制，也让数据库/旧版本数据与前端安全假设不一致。
+- 后端应限制允许的主题键集合、键数量和 `#[0-9a-fA-F]{6}` 值；前端 `parseLayout` 也必须采用相同规则。未知键应拒绝或丢弃。
+
+### P1：项目定义的完整质量门禁未通过
+
+- 位置：`package.json:14-18` 及当前 Rust 源码。
+- `pnpm check` 在 `cargo fmt --check` 阶段失败，涉及 `providers/mod.rs` 和 `providers/openai.rs`。
+- 单独执行 Clippy 也失败：`commands.rs:514` 的 `let _ = ...download_and_install(...)?` 触发 `clippy::let_unit_value`，而脚本使用 `-D warnings`。
+- 由于 `check` 在格式阶段提前终止，不能宣称 CI/质量检查通过。修复应只是格式化相关 Rust 文件并移除无意义的 unit 绑定，然后重新执行完整 `pnpm check`。
+
+### P2：主题颜色控件对未覆盖颜色错误显示黑色
+
+- 位置：`src/pages/Settings.tsx:509,624-629`。
+- `hexOf(undefined)` 固定返回 `#000000`，并不读取当前暗/亮主题的实际默认 CSS 色。用户未自定义时，六个颜色选择器会全部或部分显示黑色，与实际界面颜色不一致。
+- 第一次调整某个颜色前，控件不能准确表达当前状态。应为每个 key 提供主题默认值，或用 `getComputedStyle(document.documentElement).getPropertyValue(...)` 初始化展示值。
+
+### P2：自动更新安装会再次检查版本，可能与用户确认的版本不一致
+
+- 位置：`src-tauri/src/commands.rs:482-518`，`src/pages/Settings.tsx:579-608`。
+- 前端先 `check_update` 展示版本，点击安装后后端重新 `check()`，没有使用之前检查结果的版本标识。如果更新源在两次调用间变化，安装的版本可能不是用户看到的版本。
+- 可接受简单应用重新检查，但界面应在安装前显示重新检查后的版本，或让安装命令接收并核对 expected version，避免确认语义不一致。
+
+### P2：更新进度完全不可见且安装期间按钮未锁定
+
+- 位置：`src-tauri/src/commands.rs:514-516`，`src/pages/Settings.tsx:571-612`。
+- `download_and_install` 的下载/完成回调均为空；前端没有独立 updating 状态，用户可重复点击检查或安装，产生并发更新操作。
+- 应维护 `checking/updating` 状态并禁用按钮，至少展示下载进度或明确不可取消状态。
+
+### P2：前端源文件格式已有明显退化
+
+- 位置：`src/App.tsx:1`。
+- 第一行将两个 import 连在同一行：`...react";import { listen }...`。TypeScript 能编译，但说明格式化流程没有覆盖前端，影响可读性并容易扩大无意义 diff。
+- 建议加入 Prettier/Biome 或 ESLint formatting check，并纳入 `pnpm check`。
+
+## 验证结果
+
+- `pnpm typecheck`：通过。
+- `pnpm test`：2 个测试文件、6 个测试通过。
+- `cargo test`：51 passed，0 failed。
+- `cargo fmt --check`：失败。
+- `cargo clippy --all-targets --all-features -- -D warnings`：失败（`let_unit_value`）。
+- `pnpm check`：失败，未达到项目自身定义的完整质量门槛。
+- `git diff --check`：通过。
+
+## 当前任务状态
+
+| 能力 | 静态代码结论 |
+| --- | --- |
+| V0.5 历史/趋势/预测分页整改 | 已完成主要代码整改 |
+| V0.5 通知失败重试逻辑 | 已完成 |
+| V1.0 主题分享 | 未完成：重启丢失、校验契约不完整 |
+| V1.0 插件化 Provider | 未实现：当前只有 OpenAI Admin 适配器别名 |
+| V1.0 自动更新 | 骨架完成，发布配置未完成 |
+| V1.0 发布质量 | 不通过：fmt/Clippy 门禁失败 |
+| 整体版本判断 | 建议标记 V1.0-alpha，而非正式版 |
+
+## 建议修复顺序
+
+1. 修复主题完整解析/恢复，并统一前后端 themeOverrides 白名单校验。
+2. 降低 `custom` 能力宣称或实现真正独立的兼容/插件机制。
+3. 修复 rustfmt、Clippy，使 `pnpm check` 全绿。
+4. 完成 updater 公钥/endpoint 的发布配置与构建校验。
+5. 完善主题默认色显示、更新版本确认和下载状态。
+# 自主整改：V1.0 静态审查问题（2026-08-13 00:50:51 +08:00）
+
+本轮由 Codex 直接修复上一轮静态 Review 中可在仓库内完成的问题；未伪造自动更新公钥或发布 endpoint，也未把 `custom` 别名扩写成不存在的动态插件系统。
+
+## 已整改
+
+1. **主题重启恢复**：新增 `parseLayout`，启动时完整恢复 theme、widgets 与通过校验的 themeOverrides；补主题覆盖恢复测试。
+2. **主题双端校验**：前端导入和布局解析、Rust `validate_layout_json` 统一限制六个允许键与 `#RRGGBB` 值，拒绝未知键、非法类型与非法颜色。
+3. **主题颜色控件默认值**：未覆盖时按暗/亮主题显示真实默认颜色，不再全部回退黑色。
+4. **custom 能力描述**：明确它只兼容 OpenAI Organization Admin Usage/Costs 端点，不再宣称适用于任意 Chat Completions 代理或私有部署；代码注释同步收敛。
+5. **自动更新版本确认**：安装命令接收用户已确认的 expectedVersion；重新检查后版本变化则拒绝安装并要求重新确认。
+6. **自动更新并发控制**：设置页新增 checking/installing 状态，操作期间禁用检查和安装按钮，避免重复触发。
+7. **发布状态说明**：README 将发布章节标为 V1.0-alpha，并明确当前 pubkey/endpoints 为空、自动更新只是集成骨架。
+8. **质量门禁**：运行 rustfmt，修复 Clippy `let_unit_value`；拆开 App.tsx 首行粘连 import。
+
+## 验证结果
+
+- `pnpm check`：通过。
+  - TypeScript typecheck：通过。
+  - Vitest：2 files / 7 tests passed。
+  - `cargo fmt --check`：通过。
+  - `cargo clippy --all-targets --all-features -- -D warnings`：通过。
+  - `cargo test`：51 passed，0 failed。
+- `git diff --check`：通过。
+
+## 保留的明确边界
+
+- 自动更新仍需要发布者配置真实签名公钥和 HTTPS endpoint；这是发布凭据/基础设施，不应由代码 Review 猜测生成。
+- `custom` 仍是编译期 OpenAI Admin API 适配器别名，不是真正的动态插件系统。当前已修正文案，若后续要求真正插件化，需要单独设计 manifest、加载、权限和版本兼容机制。
+- 下载进度回调仍为空；本轮已阻止重复操作并显示“安装中”，精细进度展示可作为后续体验增强，不再影响静态正确性。
+
+## Skill / Tool 增强
+
+- 按用户要求使用官方 `skill-installer` 检索 Review 相关技能。
+- curated 列表中选择并安装 `security-best-practices` 到本机 Codex skills；将在下一轮对话可用。
+- experimental 列表检索因 GitHub TLS 连接中断失败，没有绕过来源或安装未知第三方技能。

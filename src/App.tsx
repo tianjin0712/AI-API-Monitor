@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "./api";
 import TitleBar from "./components/TitleBar";
 import MiniBall from "./components/MiniBall";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
-import { DEFAULT_WIDGETS, parseTheme, parseWidgets } from "./utils/layout";
+import { DEFAULT_WIDGETS, parseLayout } from "./utils/layout";
 import type { DashboardWidget, Layout, WindowMode, WindowState } from "./types";
 
 type Page = "dashboard" | "settings";
@@ -52,7 +53,7 @@ export default function App() {
     void api
       .getLayout()
       .then((json) => {
-        setLayout({ theme: parseTheme(json), widgets: parseWidgets(json) });
+        setLayout(parseLayout(json));
       })
       .catch(() => {})
       .finally(() => setLayoutLoaded(true));

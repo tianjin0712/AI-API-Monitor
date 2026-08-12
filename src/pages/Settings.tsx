@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { THEME_OVERRIDE_KEYS } from "../utils/layout";
 import type {
   DeleteResult,
   Layout,
@@ -41,7 +42,7 @@ const NO_API_KEY_TYPES = new Set(["codex"]);
 const TYPE_HINTS: Record<string, string> = {
   codex: "无需 API Key：自动复用 Codex CLI 登录态（~/.codex/auth.json），请确保已运行 `codex login` 登录 ChatGPT。",
   claude: "需要组织（Organization）管理员 API Key（sk-ant-admin01-...）；个人账户不可用。Anthropic 为后付费账单，无余额查询，仅显示用量与费用。",
-  custom: "自定义（OpenAI 兼容）：填写平台提供的 Base URL 与 API Key，适用于国内代理 / 私有部署等兼容接口（需支持 /organization/usage/completions 等端点）。",
+  custom: "自定义 OpenAI Admin API：仅适用于同时实现 /organization/usage/completions 与 /organization/costs 的服务，不等同于普通 Chat Completions 兼容接口。",
 };
 
 /** 设置页：Provider 增删改查 + 刷新策略 */
@@ -66,6 +67,7 @@ export default function Settings({
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateBusy, setUpdateBusy] = useState<"checking" | "installing" | null>(null);
   const typeMenuRef = useRef<HTMLDivElement>(null);
   const typeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const typeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -491,22 +493,13 @@ export default function Settings({
           主题分享
         </h2>
         <div className="mt-3 grid grid-cols-2 gap-2.5">
-          {(
-            [
-              ["accent", "强调色"],
-              ["surface", "背景"],
-              ["card", "卡片"],
-              ["text-primary", "主文字"],
-              ["success", "成功色"],
-              ["danger", "危险色"],
-            ] as [string, string][]
-          ).map(([key, label]) => (
+          {THEME_OVERRIDE_KEYS.map((key) => [key, THEME_LABELS[key]] as [string, string]).map(([key, label]) => (
             <label key={key} className="flex items-center justify-between text-[12px] text-text-secondary">
               <span>{label}</span>
               <input
                 type="color"
                 className="h-7 w-12 cursor-pointer rounded border border-border bg-transparent"
-                value={hexOf(layout.themeOverrides?.[key])}
+                value={hexOf(layout.themeOverrides?.[key], layout.theme, key)}
                 onChange={(e) => {
                   const v = e.target.value;
                   onLayoutChange((prev) => ({
@@ -576,6 +569,7 @@ export default function Settings({
           <button
             className="btn btn-ghost px-3 py-1 text-[12px]"
             onClick={async () => {
+              setUpdateBusy("checking");
               setUpdateStatus("检查中…");
               try {
                 const info = await api.checkUpdate();
@@ -587,25 +581,32 @@ export default function Settings({
                 );
               } catch (e) {
                 setUpdateStatus(String(e));
+              } finally {
+                setUpdateBusy(null);
               }
             }}
+            disabled={updateBusy !== null}
           >
-            检查更新
+            {updateBusy === "checking" ? "检查中…" : "检查更新"}
           </button>
           {updateInfo?.available && (
             <button
               className="btn btn-primary px-3 py-1 text-[12px]"
               onClick={async () => {
+                setUpdateBusy("installing");
                 setUpdateStatus("下载并安装中…");
                 try {
-                  const msg = await api.installUpdate();
+                  const msg = await api.installUpdate(updateInfo.version ?? "");
                   setUpdateStatus(msg);
                 } catch (e) {
                   setUpdateStatus(String(e));
+                } finally {
+                  setUpdateBusy(null);
                 }
               }}
+              disabled={updateBusy !== null}
             >
-              下载并安装
+              {updateBusy === "installing" ? "安装中…" : "下载并安装"}
             </button>
           )}
         </div>
@@ -623,9 +624,27 @@ export default function Settings({
 
 // ---- V1.0 主题分享辅助 ----
 
-/** 归一化为 color input 可用的 hex（非法/缺失回退 #000000） */
-function hexOf(value: string | undefined): string {
-  return /^#[0-9a-fA-F]{6}$/.test(value ?? "") ? (value as string) : "#000000";
+const THEME_LABELS: Record<string, string> = {
+  accent: "强调色",
+  surface: "背景",
+  card: "卡片",
+  "text-primary": "主文字",
+  success: "成功色",
+  danger: "危险色",
+};
+const THEME_DEFAULTS: Record<Layout["theme"], Record<string, string>> = {
+  dark: {
+    accent: "#6c8cff", surface: "#0f1115", card: "#1a1d24",
+    "text-primary": "#e6e9ef", success: "#34d399", danger: "#f87171",
+  },
+  light: {
+    accent: "#4c6ef5", surface: "#f2f4f8", card: "#ffffff",
+    "text-primary": "#1c2333", success: "#12b886", danger: "#fa5252",
+  },
+};
+
+function hexOf(value: string | undefined, theme: Layout["theme"], key: string): string {
+  return /^#[0-9a-fA-F]{6}$/.test(value ?? "") ? (value as string) : THEME_DEFAULTS[theme][key];
 }
 
 /** 导出主题为 JSON 文本 */
@@ -650,7 +669,7 @@ function importTheme(text: string): { theme: Layout["theme"]; overrides: Record<
     if (parsed.theme !== "dark" && parsed.theme !== "light") return null;
     const overrides: Record<string, string> = {};
     for (const [k, v] of Object.entries(parsed.overrides ?? {})) {
-      if (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) overrides[k] = v;
+      if (THEME_OVERRIDE_KEYS.includes(k as (typeof THEME_OVERRIDE_KEYS)[number]) && typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) overrides[k] = v;
     }
     return { theme: parsed.theme, overrides };
   } catch {

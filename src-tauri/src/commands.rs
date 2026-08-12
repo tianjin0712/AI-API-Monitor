@@ -501,7 +501,7 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, AppError> {
 
 /// 下载并安装可用更新（安装完成后通常需要重启应用）。
 #[tauri::command]
-pub async fn install_update(app: AppHandle) -> Result<String, AppError> {
+pub async fn install_update(app: AppHandle, expected_version: String) -> Result<String, AppError> {
     use tauri_plugin_updater::UpdaterExt;
     let updater = app
         .updater()
@@ -511,7 +511,13 @@ pub async fn install_update(app: AppHandle) -> Result<String, AppError> {
         .await
         .map_err(|e| AppError::Invalid(format!("更新检查失败: {e}")))?
         .ok_or_else(|| AppError::Invalid("当前没有可用更新".into()))?;
-    let _ = update
+    if expected_version.is_empty() || update.version != expected_version {
+        return Err(AppError::Invalid(format!(
+            "可用版本已变化（当前 v{}），请重新检查并确认",
+            update.version
+        )));
+    }
+    update
         .download_and_install(|_, _| {}, || {})
         .await
         .map_err(|e| AppError::Invalid(format!("更新下载/安装失败: {e}")))?;
@@ -534,6 +540,36 @@ pub fn validate_layout_json(layout: &str) -> Result<(), String> {
         .unwrap_or("dark");
     if theme != "dark" && theme != "light" {
         return Err("theme 仅支持 dark / light".into());
+    }
+    if let Some(overrides) = value.get("themeOverrides") {
+        let Some(map) = overrides.as_object() else {
+            return Err("themeOverrides 必须为对象".into());
+        };
+        const ALLOWED: [&str; 6] = [
+            "accent",
+            "surface",
+            "card",
+            "text-primary",
+            "success",
+            "danger",
+        ];
+        if map.len() > ALLOWED.len() {
+            return Err("themeOverrides 颜色数量超限".into());
+        }
+        for (key, value) in map {
+            if !ALLOWED.contains(&key.as_str()) {
+                return Err(format!("未知主题颜色: {key}"));
+            }
+            let Some(color) = value.as_str() else {
+                return Err(format!("主题颜色 {key} 必须为字符串"));
+            };
+            let valid = color.len() == 7
+                && color.starts_with('#')
+                && color[1..].bytes().all(|b| b.is_ascii_hexdigit());
+            if !valid {
+                return Err(format!("主题颜色 {key} 必须为 #RRGGBB"));
+            }
+        }
     }
     let Some(arr) = value.get("widgets").and_then(|w| w.as_array()) else {
         return Err("widgets 必须为数组".into());
@@ -782,6 +818,14 @@ mod tests {
         assert!(super::validate_layout_json("not json").is_err());
         assert!(super::validate_layout_json(r#"{"theme":"blue","widgets":[]}"#).is_err());
         assert!(super::validate_layout_json(r#"{"theme":"dark","widgets":{}}"#).is_err());
+        assert!(super::validate_layout_json(
+            r##"{"theme":"dark","widgets":[],"themeOverrides":{"unknown":"#ffffff"}}"##
+        )
+        .is_err());
+        assert!(super::validate_layout_json(
+            r#"{"theme":"dark","widgets":[],"themeOverrides":{"accent":"red"}}"#
+        )
+        .is_err());
     }
 
     #[test]

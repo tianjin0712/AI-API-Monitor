@@ -168,7 +168,7 @@ impl ProviderManager {
         let mut registry: HashMap<String, Box<dyn ProviderAdapter>> = HashMap::new();
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
-        // V1.0 插件化基础：custom = OpenAI 兼容通用适配器（任意 Base URL，可接入国内代理/私有部署）
+        // custom 仅复用 OpenAI Organization Admin Usage/Costs 协议，并非通用 Chat Completions 兼容层。
         registry.insert("custom".into(), Box::new(openai::OpenAIProvider));
         registry.insert("codex".into(), Box::new(codex::CodexProvider));
         registry.insert(
@@ -228,7 +228,10 @@ mod tests {
         let mut page = None;
         assert!(advance_page(true, Some("c1"), &mut seen, &mut page).unwrap());
         let err = advance_page(true, Some("c1"), &mut seen, &mut page);
-        assert!(matches!(err, Err(ProviderError::Api(_))), "重复 cursor 应报错");
+        assert!(
+            matches!(err, Err(ProviderError::Api(_))),
+            "重复 cursor 应报错"
+        );
     }
 
     #[test]
@@ -243,13 +246,11 @@ mod tests {
     #[test]
     fn next_page_url_encodes_cursor() {
         // P1：cursor 视为 opaque token，必须 URL 编码
-        let url = next_page_url(
-            "https://api.example.com/v1/x?start=1",
-            "page",
-            "a b&c=1",
-        )
-        .unwrap();
-        assert!(url.contains("page=a+b%26c%3D1"), "cursor 应被 URL 编码: {url}");
+        let url = next_page_url("https://api.example.com/v1/x?start=1", "page", "a b&c=1").unwrap();
+        assert!(
+            url.contains("page=a+b%26c%3D1"),
+            "cursor 应被 URL 编码: {url}"
+        );
         assert!(url.contains("start=1"), "原查询参数应保留: {url}");
     }
 }

@@ -115,9 +115,11 @@ impl ProviderAdapter for MyProvider {
 - 刷新间隔后端最终校验（前台 10–3600s / 后台 60–3600s / 后台 ≥ 前台）
 - 数据库位于系统 app data 目录（`com.aiapimonitor.desktop`）
 
-## 📦 发布（V1.0）
+## 📦 发布（V1.0-alpha）
 
 自动更新需要发布者在构建时配置签名与更新源（`tauri-plugin-updater` 已集成）：
+
+> 当前仓库的 `pubkey` 与 `endpoints` 为占位空值，因此自动更新仅为集成骨架；发布包前必须完成下面的配置。
 
 ```bash
 # 1. 生成更新签名密钥（仅一次，妥善保管）

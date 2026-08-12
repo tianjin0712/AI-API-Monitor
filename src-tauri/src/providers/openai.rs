@@ -218,7 +218,12 @@ async fn fetch_usage_pages(
         };
         let resp: UsageResponse = fetch_json(client, &url, api_key).await?;
         all.extend(resp.data);
-        match super::advance_page(resp.has_more, resp.next_page.as_deref(), &mut seen, &mut page)? {
+        match super::advance_page(
+            resp.has_more,
+            resp.next_page.as_deref(),
+            &mut seen,
+            &mut page,
+        )? {
             true => continue,
             false => {
                 completed = true;
@@ -251,7 +256,12 @@ async fn fetch_costs_pages(
         };
         let resp: CostsResponse = fetch_json(client, &url, api_key).await?;
         all.extend(resp.data);
-        match super::advance_page(resp.has_more, resp.next_page.as_deref(), &mut seen, &mut page)? {
+        match super::advance_page(
+            resp.has_more,
+            resp.next_page.as_deref(),
+            &mut seen,
+            &mut page,
+        )? {
             true => continue,
             false => {
                 completed = true;

@@ -1,5 +1,11 @@
 import type { DashboardWidget, Layout } from "../types";
 
+export const THEME_OVERRIDE_KEYS = [
+  "accent", "surface", "card", "text-primary", "success", "danger",
+] as const;
+const THEME_OVERRIDE_KEY_SET = new Set<string>(THEME_OVERRIDE_KEYS);
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
 /** 默认 Widget 布局（顺序 = 渲染顺序） */
 export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "w-providers", type: "providers", visible: true },
@@ -51,4 +57,27 @@ export function parseTheme(json: string | null): "dark" | "light" {
   } catch {
     return "dark";
   }
+}
+
+/** Parse the complete persisted layout, including validated V1.0 theme overrides. */
+export function parseLayout(json: string | null): Layout {
+  const layout: Layout = {
+    theme: parseTheme(json),
+    widgets: parseWidgets(json),
+  };
+  if (!json) return layout;
+  try {
+    const parsed = JSON.parse(json) as Partial<Layout>;
+    if (!parsed.themeOverrides || typeof parsed.themeOverrides !== "object") return layout;
+    const overrides: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed.themeOverrides)) {
+      if (THEME_OVERRIDE_KEY_SET.has(key) && typeof value === "string" && HEX_COLOR.test(value)) {
+        overrides[key] = value;
+      }
+    }
+    if (Object.keys(overrides).length > 0) layout.themeOverrides = overrides;
+  } catch {
+    // theme/widgets parsers already provide safe defaults.
+  }
+  return layout;
 }
