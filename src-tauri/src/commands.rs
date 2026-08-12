@@ -130,6 +130,15 @@ pub fn get_refresh_settings(db: State<'_, Db>) -> Result<RefreshSettings, AppErr
     })
 }
 
+/// 读取旧凭据迁移失败数（供前端提示需重新录入的账户）。
+#[tauri::command]
+pub fn get_migration_status(db: State<'_, Db>) -> Option<u64> {
+    settings::get_setting(&db, settings::SETTING_MIGRATION_LEGACY_FAILED)
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse().ok())
+}
+
 /// 刷新间隔合法性校验（纯函数，供命令与测试复用）。
 pub fn validate_refresh_intervals(foreground_secs: u64, background_secs: u64) -> Result<(), String> {
     const MIN_FOREGROUND: u64 = 10;

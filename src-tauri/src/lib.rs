@@ -28,9 +28,19 @@ pub fn run() {
             app.manage(db);
             app.manage(ProviderManager::new());
 
-            // 启动时执行旧凭据迁移（幂等，V3）
-            if let Err(e) = settings::migrate_legacy_credentials(app.state::<Db>().inner()) {
-                eprintln!("[setup] 凭据迁移失败: {e}");
+            // 启动时执行旧凭据迁移（幂等，V3）；失败数写入 settings 供前端提示
+            match settings::migrate_legacy_credentials(app.state::<Db>().inner()) {
+                Ok(r) => {
+                    if r.failed > 0 {
+                        let _ = settings::set_setting(
+                            app.state::<Db>().inner(),
+                            settings::SETTING_MIGRATION_LEGACY_FAILED,
+                            &r.failed.to_string(),
+                        );
+                        eprintln!("[setup] {} 个旧凭据无法读取，需用户重新录入", r.failed);
+                    }
+                }
+                Err(e) => eprintln!("[setup] 凭据迁移失败: {e}"),
             }
 
             setup_tray(app)?;
@@ -55,6 +65,7 @@ pub fn run() {
             commands::set_window_mode,
             commands::set_always_on_top,
             commands::get_window_state,
+            commands::get_migration_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

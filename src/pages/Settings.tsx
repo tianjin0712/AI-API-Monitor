@@ -39,6 +39,7 @@ export default function Settings() {
   });
   const [error, setError] = useState<string | null>(null);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [migrationFailed, setMigrationFailed] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +59,10 @@ export default function Settings() {
     void api
       .getWindowState()
       .then((s) => setAlwaysOnTop(s.alwaysOnTop))
+      .catch(() => {});
+    void api
+      .getMigrationStatus()
+      .then((n) => setMigrationFailed(n ?? 0))
       .catch(() => {});
   }, [load]);
 
@@ -133,6 +138,12 @@ export default function Settings() {
 
   return (
     <div className="animate-fade-in-up flex flex-col gap-4">
+      {migrationFailed > 0 && (
+        <div className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] text-warning">
+          {migrationFailed} 个账户的旧版凭据无法读取（可能已失效），请编辑账户重新录入 API
+          Key。
+        </div>
+      )}
       {error && (
         <div className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
           {error}

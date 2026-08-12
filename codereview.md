@@ -1,6 +1,4 @@
-# AI API Monitor 代码复审（V0.2）
-
-审查日期：2026-08-12
+# 代码复审：V0.2（2026-08-12 18:48:15 +08:00）
 
 审查基线：提交 `ab3fff2`（V0.2 桌面能力 + V0.1 审查修复）
 范围：React/TypeScript 前端、Tauri/Rust 后端、Provider、SQLite 与 V0.2 托盘/窗口模式。

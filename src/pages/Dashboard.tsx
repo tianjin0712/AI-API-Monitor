@@ -155,16 +155,20 @@ export default function Dashboard() {
     window.addEventListener("focus", onFocus);
     // 后端窗口聚焦事件（系统唤醒/窗口恢复时触发，比 WebView focus 更可靠）
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
     void listen<void>("app-focused", () => {
       reset();
       void runRefresh();
     }).then((fn) => {
-      unlisten = fn;
+      // 组件在 promise resolve 前卸载时立即注销，避免 listener 泄漏
+      if (cancelled) fn();
+      else unlisten = fn;
     });
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", reset);
       window.removeEventListener("focus", onFocus);
+      cancelled = true;
       unlisten?.();
     };
   }, [refreshSettings.foregroundSecs, refreshSettings.backgroundSecs, runRefresh]);

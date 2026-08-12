@@ -47,4 +47,5 @@ export const api = {
   setAlwaysOnTop: (enabled: boolean) =>
     invoke<WindowState>("set_always_on_top", { enabled }),
   getWindowState: () => invoke<WindowState>("get_window_state"),
+  getMigrationStatus: () => invoke<number | null>("get_migration_status"),
 };

@@ -282,10 +282,21 @@ pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), AppError> {
     .map_err(AppError::from)
 }
 
+/// 旧凭据迁移结果（供前端提示需重新录入的账户数）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrateResult {
+    pub migrated: usize,
+    pub failed: usize,
+}
+
+/// settings 键名：无法读取的旧凭据数量（启动迁移后写入，供前端提示）。
+pub const SETTING_MIGRATION_LEGACY_FAILED: &str = "migration.legacyFailed";
+
 /// 将旧版按名称生成的凭据引用（`provider_<name>`）迁移为 UUID 引用（P1/V3 迁移）。
-/// 幂等：仅处理 account 以 `provider_` 开头的旧格式；无法读取的凭据保留记录并提示，
-/// 不静默丢失。返回成功迁移的条数。
-pub fn migrate_legacy_credentials(db: &Db) -> Result<usize, AppError> {
+/// 幂等：仅处理 account 以 `provider_` 开头的旧格式；无法读取的凭据保留记录，
+/// 并在结果中统计 failed 供前端提示（不静默丢失）。
+pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
     let rows: Vec<(i64, String)> = db.with_conn(|conn| {
         let mut stmt = conn.prepare("SELECT id, key_ref FROM providers")?;
         let iter = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -293,6 +304,7 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<usize, AppError> {
     })?;
 
     let mut migrated = 0;
+    let mut failed = 0;
     for (id, key_ref) in rows {
         let account = key_ref.rsplit_once(':').map(|(_, a)| a).unwrap_or("");
         if !account.starts_with("provider_") {
@@ -314,14 +326,15 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<usize, AppError> {
                 migrated += 1;
             }
             Err(e) => {
-                // 凭据无法读取：保留旧记录并提示用户重新录入，不可静默丢失
+                // 凭据无法读取：保留旧记录并统计失败，供前端提示用户重新录入
                 eprintln!(
                     "[migrate] 旧凭据无法读取（{key_ref}，provider id={id}）: {e}，请重新录入该账户"
                 );
+                failed += 1;
             }
         }
     }
-    Ok(migrated)
+    Ok(MigrateResult { migrated, failed })
 }
 
 /// 读取前台刷新间隔（秒），未配置时返回默认值 10。
