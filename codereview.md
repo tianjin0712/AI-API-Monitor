@@ -304,3 +304,56 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 3. 对缺失核心字段、401 和协议变化返回可行动错误；将该 Provider 标记为实验性。
 4. 修复上一轮全部 V0.3 持久化与汇总问题。
 5. 安装 Rust 工具链后运行全部测试，并为 Codex host allowlist、重定向和空响应添加回归测试。
+
+---
+
+# 修复记录（Reasonix 执行）
+
+> 以下按提交记录登记各轮审查问题的修复状态，供 codex 复核。
+
+## 批次 1：V0.2 复审（提交 `30585e2` / `16c5285` / `fe7f78f`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P0：托盘菜单切换模式不同步 React（Mini/小球被完整页裁切） | ✅ 已修复 | 模式/置顶变更 emit `window-mode-changed` 事件，前端 listen 同步视图；启动恢复走同一状态源 |
+| P1：左键托盘菜单与左键显示/隐藏冲突 | ✅ 已修复 | `show_menu_on_left_click(false)`：左键切换可见性、右键菜单 |
+| P1：旧 `provider_<name>` 凭据未迁移 UUID | ✅ 已修复 | db 迁移 V3 + `migrate_legacy_credentials`（启动幂等迁移，失败保留并统计提示） |
+| P1：窗口模式/置顶持久化失败时原生与持久化不一致 | ✅ 已修复 | 写入前记录旧状态，`set_setting` 失败时补偿恢复原生窗口 |
+| P2：未保存/恢复 Full 尺寸与 Mini/Ball 位置 | ✅ 已修复 | moved/resized 监听保存各模式几何，启动按模式恢复（坐标非负保护） |
+| P2：刷新最小间隔与后端不一致、无唤醒刷新 | ✅ 已修复 | 最小间隔统一 10s；窗口聚焦（含系统唤醒）emit `app-focused` 触发刷新 |
+| P2：OpenAI 无分页、无权限提示 | ✅ 已修复 | `has_more`/`next_page` 分页（上限 5 页）+ 表单管理员密钥提示 |
+| P2：删除凭据失败无可见状态 | ✅ 已修复 | `delete_provider` 返回 `DeleteResult`（credential_cleaned/note），前端提示 |
+| P3：CSP 为 null | ✅ 已修复 | 最小 CSP（生产 script-src 'self'）+ devCsp 放宽 dev HMR |
+| review 补充：app-focused 监听泄漏 / 迁移失败无提示 / 迁移标记残留 / 几何保存 key 竞态 | ✅ 已修复 | cancelled 标志、`get_migration_status` 命令 + Settings 警告、failed==0 清除标记、`save_geometry_for` 显式传模式 |
+
+## 批次 2：V0.3 遗留（提交 `5821d47`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P1：默认布局可能覆盖用户已保存布局 | ✅ 已修复 | Layout 提升为 App 级单一状态 + `layoutLoaded` 标志，加载完成前禁止自动保存 |
+| P1：设置页切换主题不持久化 | ✅ 已修复 | 主题切换在 App 层统一持久化（不再依赖 Dashboard 挂载） |
+| P1：跨币种/跨指标直接相加 | ✅ 已修复 | Summary/Cost Widget 按 currency 分组展示，Codex credits 独立不参与货币求和 |
+| P2：布局保存失败静默吞掉 | ✅ 已修复 | 保存失败显示红色提示条 + 重试按钮 |
+| P2：后端布局校验不足 | ✅ 已修复 | id 非空/唯一、type 白名单、visible 布尔、≤20 个、≤64KB |
+| P2：旧布局不自动补入新 Widget | ✅ 已修复 | `parseWidgets` 与默认清单合并，新增 Widget 自动追加 |
+| P2：拖拽区域整卡冲突 | ✅ 已修复 | 仅 `⠿` 把手 draggable |
+| P1：完整 DIY 能力差距 | ⚠️ 范围说明 | README 标注 "V0.3-alpha：排序/隐藏/双主题"，缩放/透明/圆角等列入后续迭代 |
+
+## 批次 3：Codex Provider（提交 `b40b352` 实现 + `5821d47` 安全修复）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P0：access token 可发送到任意 HTTPS 主机 | ✅ 已修复 | URL 硬编码固定官方地址（忽略 api_url）+ 禁用重定向 + 校验层精确匹配（拒恶意 host/子域/端口/userinfo/路径混淆）+ 表单只读 + 2 个回归测试 |
+| P1：内部端点无公开承诺，README 表述过度 | ✅ 已修复 | README 标注 ⚠️ 实验性（依赖 codex-cli 0.146.0 内部接口） |
+| P1：只读 access token 无刷新能力 | ⚠️ 已知限制 | 不自行实现未官方支持的 OAuth 刷新；401 返回可行动错误提示 `codex login` |
+| P1：空/变化响应被当成功写入零值历史 | ✅ 已修复 | 核心数据缺失（无 balance/remaining/reset_time）显式报错 |
+| P2：删除 Codex 误清 `cli_local` 并误报残留 | ✅ 已修复 | `CredentialSource` 枚举 + codex key_ref 存空字符串，delete 跳过空 key_ref 清理 |
+| P2：额度标记为人民币语义错误 | ✅ 已修复 | currency 改 `credits`，独立指标展示 |
+| P2：批量刷新串行阻塞 | ✅ 已修复 | refresh_all 改 tokio JoinSet + Semaphore(3) 受控并发 |
+
+## 当前测试状态
+
+- `cargo test`：27 passed / 0 failed（新增 Codex URL 安全 2、布局校验 2、Codex fixture 4 等）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
