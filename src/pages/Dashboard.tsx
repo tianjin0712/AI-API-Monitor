@@ -146,15 +146,21 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
         : Math.max(refreshSettings.backgroundSecs, 60)) * 1000;
 
     let timer: number;
+    let expectedTickAt = Date.now() + Math.max(MIN_INTERVAL_MS, intervalOf());
     const tick = () => {
       void runRefresh();
-      timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
+      const delay = Math.max(MIN_INTERVAL_MS, intervalOf());
+      expectedTickAt = Date.now() + delay;
+      timer = window.setTimeout(tick, delay);
     };
     timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
 
     const reset = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
+      const delay = Math.max(MIN_INTERVAL_MS, intervalOf());
+      if (Date.now() - expectedTickAt > MIN_INTERVAL_MS) void runRefresh();
+      expectedTickAt = Date.now() + delay;
+      timer = window.setTimeout(tick, delay);
     };
     const onFocus = () => {
       reset();
@@ -353,8 +359,9 @@ function SummaryWidget({
   // P1：按币种分组汇总，不跨币种直接相加
   const todayCostByCurrency = new Map<string, number>();
   for (const u of list) {
+    if (u.todayCost == null) continue;
     const c = u.currency || "—";
-    todayCostByCurrency.set(c, (todayCostByCurrency.get(c) ?? 0) + (u.todayCost ?? 0));
+    todayCostByCurrency.set(c, (todayCostByCurrency.get(c) ?? 0) + u.todayCost);
   }
   const totalTokens = list.reduce((sum, u) => sum + u.totalTokens, 0);
   return (
@@ -380,8 +387,12 @@ function CostWidget({ usages }: { usages: Record<number, ProviderUsage> }) {
   const monthCostByCurrency = new Map<string, number>();
   for (const u of list) {
     const c = u.currency || "—";
-    balanceByCurrency.set(c, (balanceByCurrency.get(c) ?? 0) + (u.balance ?? 0));
-    monthCostByCurrency.set(c, (monthCostByCurrency.get(c) ?? 0) + (u.monthCost ?? 0));
+    if (u.balance != null) {
+      balanceByCurrency.set(c, (balanceByCurrency.get(c) ?? 0) + u.balance);
+    }
+    if (u.monthCost != null) {
+      monthCostByCurrency.set(c, (monthCostByCurrency.get(c) ?? 0) + u.monthCost);
+    }
   }
   return (
     <section className="glass p-4">

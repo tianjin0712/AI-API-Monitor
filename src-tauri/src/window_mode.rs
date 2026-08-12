@@ -34,6 +34,44 @@ struct Geometry {
     y: f64,
 }
 
+fn rects_intersect(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    mx: f64,
+    my: f64,
+    mwidth: f64,
+    mheight: f64,
+) -> bool {
+    width > 0.0
+        && height > 0.0
+        && x < mx + mwidth
+        && x + width > mx
+        && y < my + mheight
+        && y + height > my
+}
+
+fn is_geometry_visible(window: &tauri::WebviewWindow, geometry: Geometry, scale: f64) -> bool {
+    let Ok(monitors) = window.available_monitors() else {
+        return false;
+    };
+    monitors.iter().any(|monitor| {
+        let position = monitor.position();
+        let size = monitor.size();
+        rects_intersect(
+            geometry.x * scale,
+            geometry.y * scale,
+            geometry.width * scale,
+            geometry.height * scale,
+            position.x as f64,
+            position.y as f64,
+            size.width as f64,
+            size.height as f64,
+        )
+    })
+}
+
 /// 保存指定模式的窗口几何：Full 存尺寸+位置，Mini/Ball 存位置（尺寸固定）。
 /// 显式传入模式，避免切换瞬间 current_state 读到旧模式导致写错 key（review should-fix）。
 pub fn save_geometry_for(app: &tauri::AppHandle, db: &Db, mode: WindowMode) {
@@ -124,11 +162,7 @@ impl WindowMode {
 
 /// 应用窗口模式（尺寸 + 可缩放性 + 持久化）。
 /// 持久化失败时补偿恢复原生窗口状态，保证与数据库一致（P1 修复）。
-pub fn apply_mode(
-    app: &tauri::AppHandle,
-    db: &Db,
-    mode: WindowMode,
-) -> Result<(), AppError> {
+pub fn apply_mode(app: &tauri::AppHandle, db: &Db, mode: WindowMode) -> Result<(), AppError> {
     let old_mode = current_state(db).mode; // 写入前的持久化模式（用于补偿）
     let window = app
         .get_webview_window(MAIN_WINDOW)
@@ -219,8 +253,8 @@ pub fn restore_window_state(app: &tauri::App) -> tauri::Result<()> {
         WindowMode::Ball => SETTING_POS_BALL,
     };
     if let Some(g) = load_geometry(&db, pos_key) {
-        if g.x >= 0.0 && g.y >= 0.0 {
-            let sf = window.scale_factor().unwrap_or(1.0);
+        let sf = window.scale_factor().unwrap_or(1.0);
+        if is_geometry_visible(&window, g, sf) {
             let _ = window.set_position(tauri::PhysicalPosition::new(
                 (g.x * sf) as i32,
                 (g.y * sf) as i32,
@@ -231,4 +265,23 @@ pub fn restore_window_state(app: &tauri::App) -> tauri::Result<()> {
     // 置顶
     window.set_always_on_top(state.always_on_top)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rects_intersect;
+
+    #[test]
+    fn negative_secondary_monitor_coordinates_are_valid() {
+        assert!(rects_intersect(
+            -400.0, 100.0, 280.0, 96.0, -1920.0, 0.0, 1920.0, 1080.0
+        ));
+    }
+
+    #[test]
+    fn fully_offscreen_geometry_is_rejected() {
+        assert!(!rects_intersect(
+            5000.0, 5000.0, 280.0, 96.0, 0.0, 0.0, 1920.0, 1080.0
+        ));
+    }
 }

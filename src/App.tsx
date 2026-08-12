@@ -11,7 +11,11 @@ import type { DashboardWidget, Layout, WindowMode, WindowState } from "./types";
 type Page = "dashboard" | "settings";
 export type Theme = "dark" | "light";
 
-const DEFAULT_LAYOUT: Layout = { theme: "dark", widgets: DEFAULT_WIDGETS };
+const cachedTheme = document.documentElement.dataset.theme;
+const DEFAULT_LAYOUT: Layout = {
+  theme: cachedTheme === "light" ? "light" : "dark",
+  widgets: DEFAULT_WIDGETS,
+};
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
@@ -26,6 +30,7 @@ export default function App() {
   // 应用主题到 <html data-theme>
   useEffect(() => {
     document.documentElement.dataset.theme = layout.theme;
+    window.localStorage.setItem("ai-monitor-theme", layout.theme);
   }, [layout.theme]);
 
   // 启动：读取窗口状态 + 布局（theme/widgets）

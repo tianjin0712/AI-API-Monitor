@@ -26,10 +26,21 @@ const TYPE_PRESETS: Record<string, string> = {
   deepseek: "https://api.deepseek.com",
   openai: "https://api.openai.com/v1",
   codex: "https://chatgpt.com/backend-api/codex",
+  openrouter: "https://openrouter.ai/api/v1",
+  siliconflow: "https://api.siliconflow.cn/v1",
+  claude: "https://api.anthropic.com/v1",
+  gemini: "https://generativelanguage.googleapis.com",
 };
 
 /** 使用 CLI 本地凭证的类型（无需输入 API Key） */
 const NO_API_KEY_TYPES = new Set(["codex"]);
+
+/** 各类型的附加说明（显示在表单内） */
+const TYPE_HINTS: Record<string, string> = {
+  codex: "无需 API Key：自动复用 Codex CLI 登录态（~/.codex/auth.json），请确保已运行 `codex login` 登录 ChatGPT。",
+  claude: "需要组织（Organization）管理员 API Key（sk-ant-admin01-...）；个人账户不可用。Anthropic 为后付费账单，无余额查询，仅显示用量与费用。",
+  gemini: "Gemini API 无公开的余额/用量查询端点，请在 Google AI Studio 的 Billing 页面查看（aistudio.google.com）。",
+};
 
 /** 设置页：Provider 增删改查 + 刷新策略 */
 export default function Settings() {
@@ -236,6 +247,11 @@ export default function Settings() {
               </>
             )}
           </label>
+          {TYPE_HINTS[form.providerType] && !NO_API_KEY_TYPES.has(form.providerType) && (
+            <p className="col-span-2 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
+              {TYPE_HINTS[form.providerType]}
+            </p>
+          )}
           {form.providerType === "openai" && (
             <p className="col-span-2 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
               提示：OpenAI 用量/费用接口需要组织（Organization）管理员权限的

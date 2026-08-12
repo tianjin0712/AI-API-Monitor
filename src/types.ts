@@ -4,7 +4,14 @@
  * 已注册的 Provider 类型（与后端 ProviderManager 注册表一致）。
  * 下拉选项来自 supported_provider_types 命令（动态），此处仅为静态提示。
  */
-export type ProviderType = "deepseek" | "openai" | "codex";
+export type ProviderType =
+  | "deepseek"
+  | "openai"
+  | "codex"
+  | "openrouter"
+  | "siliconflow"
+  | "claude"
+  | "gemini";
 
 export interface ProviderConfig {
   id: number;

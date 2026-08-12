@@ -7,9 +7,13 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod claude;
 pub mod codex;
 pub mod deepseek;
+pub mod gemini;
 pub mod openai;
+pub mod openrouter;
+pub mod siliconflow;
 
 /// 统一返回给前端的 Provider 用量数据（对应 mission.md 的 ProviderUsage 接口）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +124,10 @@ impl ProviderManager {
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
         registry.insert("codex".into(), Box::new(codex::CodexProvider));
+        registry.insert("openrouter".into(), Box::new(openrouter::OpenRouterProvider));
+        registry.insert("siliconflow".into(), Box::new(siliconflow::SiliconFlowProvider));
+        registry.insert("claude".into(), Box::new(claude::ClaudeProvider));
+        registry.insert("gemini".into(), Box::new(gemini::GeminiProvider));
         Self { registry }
     }
 
