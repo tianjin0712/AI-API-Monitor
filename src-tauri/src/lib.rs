@@ -38,6 +38,12 @@ pub fn run() {
                             &r.failed.to_string(),
                         );
                         eprintln!("[setup] {} 个旧凭据无法读取，需用户重新录入", r.failed);
+                    } else {
+                        // 全部迁移成功时清除历史标记，避免警告永久残留（review should-fix）
+                        let _ = settings::delete_setting(
+                            app.state::<Db>().inner(),
+                            settings::SETTING_MIGRATION_LEGACY_FAILED,
+                        );
                     }
                 }
                 Err(e) => eprintln!("[setup] 凭据迁移失败: {e}"),

@@ -282,6 +282,15 @@ pub fn set_setting(db: &Db, key: &str, value: &str) -> Result<(), AppError> {
     .map_err(AppError::from)
 }
 
+/// 删除设置项（不存在时静默成功）。
+pub fn delete_setting(db: &Db, key: &str) -> Result<(), AppError> {
+    db.with_conn(|conn| {
+        conn.execute("DELETE FROM settings WHERE key = ?1", [key])?;
+        Ok(())
+    })
+    .map_err(AppError::from)
+}
+
 /// 旧凭据迁移结果（供前端提示需重新录入的账户数）。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]

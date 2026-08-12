@@ -34,8 +34,9 @@ struct Geometry {
     y: f64,
 }
 
-/// 保存当前窗口几何：Full 存尺寸+位置，Mini/Ball 存位置（尺寸固定）。
-pub fn save_current_geometry(app: &tauri::AppHandle, db: &Db) {
+/// 保存指定模式的窗口几何：Full 存尺寸+位置，Mini/Ball 存位置（尺寸固定）。
+/// 显式传入模式，避免切换瞬间 current_state 读到旧模式导致写错 key（review should-fix）。
+pub fn save_geometry_for(app: &tauri::AppHandle, db: &Db, mode: WindowMode) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
@@ -52,7 +53,7 @@ pub fn save_current_geometry(app: &tauri::AppHandle, db: &Db) {
         x: outer.x as f64 / sf,
         y: outer.y as f64 / sf,
     };
-    let key = match current_state(db).mode {
+    let key = match mode {
         WindowMode::Full => SETTING_GEOMETRY_FULL,
         WindowMode::Mini => SETTING_POS_MINI,
         WindowMode::Ball => SETTING_POS_BALL,
@@ -60,6 +61,12 @@ pub fn save_current_geometry(app: &tauri::AppHandle, db: &Db) {
     if let Ok(json) = serde_json::to_string(&geo) {
         let _ = set_setting(db, key, &json);
     }
+}
+
+/// 保存当前模式的窗口几何（供 moved/resized 监听使用）。
+pub fn save_current_geometry(app: &tauri::AppHandle, db: &Db) {
+    let mode = current_state(db).mode;
+    save_geometry_for(app, db, mode);
 }
 
 /// 读取某模式的已保存几何。
@@ -143,8 +150,8 @@ pub fn apply_mode(
     }
     // 通知前端同步视图（托盘路径与命令路径统一状态源）
     let _ = app.emit(EVENT_WINDOW_STATE_CHANGED, current_state(db));
-    // 保存本模式的几何（尺寸/位置），确保模式切换后持久化准确
-    save_current_geometry(app, db);
+    // 以明确的目标模式保存几何（避免切换瞬间按旧模式写错 key）
+    save_geometry_for(app, db, mode);
     Ok(())
 }
 
