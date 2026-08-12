@@ -1,51 +1,48 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import TitleBar from "./components/TitleBar";
+import Dashboard from "./pages/Dashboard";
+import Settings from "./pages/Settings";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+type Page = "dashboard" | "settings";
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+export default function App() {
+  const [page, setPage] = useState<Page>("dashboard");
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <div
+      className="flex h-screen flex-col overflow-hidden"
+      style={{
+        background:
+          "radial-gradient(120% 90% at 50% 0%, rgba(108,140,255,0.10), transparent 60%), var(--color-surface)",
+      }}
+    >
+      <TitleBar />
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
+      {/* 页面切换 */}
+      <nav className="mx-4 flex shrink-0 gap-1 rounded-xl border border-border/60 bg-white/[0.03] p-1">
+        {(
+          [
+            ["dashboard", "总览"],
+            ["settings", "设置"],
+          ] as [Page, string][]
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setPage(key)}
+            className={`flex-1 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
+              page === key
+                ? "bg-accent text-[#0b0e14]"
+                : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+        {page === "dashboard" ? <Dashboard /> : <Settings />}
+      </main>
+    </div>
   );
 }
-
-export default App;

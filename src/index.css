@@ -24,25 +24,142 @@ body,
 }
 
 body {
-  background-color: var(--color-surface);
+  background-color: transparent; /* 透明窗口：背景由 App 容器绘制 */
   color: var(--color-text-primary);
   font-family:
     "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system,
     sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
+  overflow: hidden;
 }
 
+/* ---- 无边框窗口拖拽区 ---- */
+[data-tauri-drag-region] {
+  cursor: grab;
+}
+[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+
+/* ---- 毛玻璃卡片 ---- */
+.glass {
+  background: linear-gradient(
+    160deg,
+    rgba(26, 29, 36, 0.85),
+    rgba(18, 20, 26, 0.75)
+  );
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+}
+
+/* ---- 动画 ---- */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.35s ease-out both;
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.animate-pulse-soft {
+  animation: pulseSoft 1.6s ease-in-out infinite;
+}
+
+/* ---- 滚动条 ---- */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
   border-radius: 4px;
 }
-
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---- 输入控件 ---- */
+.input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+.input:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(108, 140, 255, 0.15);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: #0b0e14;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #7d99ff;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+}
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+.btn-danger-ghost:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.1);
 }
