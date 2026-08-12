@@ -89,6 +89,30 @@ export default function Dashboard() {
     }
   }, []);
 
+  // 单卡片刷新（独立状态，与批量共享单飞）
+  const refreshOne = useCallback(
+    async (id: number) => {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      setRefreshingIds(new Set([id]));
+      try {
+        const usage = await api.refreshProvider(id);
+        setUsages((prev) => ({ ...prev, [id]: usage }));
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+      } catch (e) {
+        setErrors((prev) => ({ ...prev, [id]: String(e) }));
+      } finally {
+        setRefreshingIds(new Set());
+        refreshingRef.current = false;
+      }
+    },
+    [],
+  );
+
   // 首次加载：读取 Provider 列表与刷新策略
   useEffect(() => {
     void loadProviders();
@@ -178,6 +202,7 @@ export default function Dashboard() {
           usage={usages[p.id]}
           error={errors[p.id]}
           refreshing={refreshingIds.has(p.id)}
+          onRefresh={() => void refreshOne(p.id)}
         />
       ))}
     </div>

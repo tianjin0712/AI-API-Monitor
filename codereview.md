@@ -1,118 +1,113 @@
-# AI API Monitor 代码审查
+# AI API Monitor 代码复审（V0.2）
 
-审查日期：2026-08-12  
-审查范围：当前工作目录的 React/TypeScript 前端、Tauri/Rust 后端、SQLite 与 Provider 实现；以 `mission.md` 的 V0.1 目标为验收基准。
+审查日期：2026-08-12
+
+审查基线：提交 `ab3fff2`（V0.2 桌面能力 + V0.1 审查修复）
+范围：React/TypeScript 前端、Tauri/Rust 后端、Provider、SQLite 与 V0.2 托盘/窗口模式。
 
 ## 结论
 
-项目已完成可编译的前端界面、Provider 管理、SQLite 初始化、安全凭据库接入，以及 DeepSeek 余额查询的主体代码；但不能认定 V0.1 MVP 已完成。OpenAI 用量查询实现与当前官方 API 不兼容，刷新失败被静默吞掉，且密钥引用会因同名账户冲突，均会直接影响用户数据的正确性或账户可用性。
+上一轮 V0.1 审查中最重要的 Provider、凭据隔离、刷新错误反馈和输入校验问题均已获得实质性修复，前端生产构建也通过。但 V0.2 目前仍不能验收：从系统托盘菜单切换 Mini/小球模式时，Rust 只调整窗口尺寸而没有通知 React 更新 UI，导致完整 Dashboard 被压缩/裁切在 280×96 或 72×72 的窗口内。
 
-前端生产构建（`pnpm build`）通过。项目没有自动化测试；当前环境未安装 Rust/Cargo，故未能运行 `cargo check` 或验证 Tauri 后端和桌面端实际行为。
+此外，托盘的“左键显示菜单”和“左键切换窗口可见性”同时开启，交互相互冲突。应先修复这两项并在真实 Tauri 桌面环境中手测后，再宣称 V0.2 完成。
 
-## V0.1 任务完成情况
+验证结果：
 
-| 任务 | 状态 | 证据与说明 |
+- `pnpm build`：通过。
+- Rust/Tauri：当前环境没有 `cargo`，无法执行 `cargo check`、`cargo test` 或实际运行桌面应用。
+- 自动化测试：新增了 SQLite、存储、Provider JSON 解析和刷新间隔的 Rust 单元测试；尚未能在当前环境执行，也没有窗口/托盘端到端测试。
+
+## 任务状态
+
+| 版本/能力 | 状态 | 审查结论 |
 | --- | --- | --- |
-| Tauri + React + TypeScript 项目初始化 | 已完成 | 项目结构、Vite 与 Tauri 配置齐全。 |
-| 无边框、透明主窗口 | 已完成 | `tauri.conf.json` 配置了 `decorations: false` 与 `transparent: true`；前端有自定义标题栏。 |
-| SQLite 数据库 | 已完成 | 启用 WAL、外键与两版 schema migration。 |
-| Provider 架构 | 基本完成 | 有 `ProviderAdapter` trait 与注册表；目前只注册 DeepSeek、OpenAI。 |
-| DeepSeek 余额 | 基本完成 | 已调用 `/user/balance` 并读取首个余额项；未覆盖多币种余额、不可用账户状态。 |
-| OpenAI Usage | 未完成 | 请求路径和响应模型均不符合当前官方接口，实际账户无法得到正确用量。 |
-| Provider 增删改查 | 基本完成 | 功能通路齐全，但同名账户会共享/覆盖凭据，且失败时有残留凭据。 |
-| Dashboard 显示 | 基本完成 | 可显示卡片和刷新状态；失败账户的错误未展示，统计口径不正确。 |
-| 前台 10 秒、后台 60 秒、手动/聚焦刷新 | 部分完成 | 前端轮询已写；未实现后端调度、系统唤醒刷新及可靠的后台状态判断。 |
-| API Key 不落 SQLite | 基本完成 | 密钥写入系统凭据库，SQLite 仅存引用；引用设计仍有冲突风险。 |
-| 历史用量记录 | 部分完成 | 有表和每日 UPSERT；写入的是滚动 30 天总量，不是当日增量，因此不能作为趋势/日报数据源。 |
+| V0.1 项目初始化、透明无边框窗口、SQLite | 已实现 | 基础工程与迁移逻辑齐全。 |
+| V0.1 DeepSeek 余额查询 | 基本实现 | 已有官方余额端点适配；仍只取第一种余额。 |
+| V0.1 OpenAI Usage/Costs | 基本实现 | 已改为 Organization Usage 与 Costs 接口，处理每日 bucket 的 `results` 聚合；需真实 Admin Key 验证。 |
+| V0.1 密钥安全存储 | 基本实现 | 新建账户使用 UUID 凭据引用，前端不再拿到 `keyRef`。旧数据迁移仍缺失。 |
+| V0.1 刷新与错误展示 | 基本实现 | 单飞控制和逐账户失败结果已加入；系统唤醒刷新尚未实现。 |
+| V0.2 系统托盘 | 部分实现 | 菜单、显示/隐藏、退出逻辑已写；左键交互冲突。 |
+| V0.2 Full/Mini/Ball | 未完成 | 前端按钮路径可切换；托盘路径不同步前端状态，实际会裁切界面。 |
+| V0.2 Always On Top | 基本实现 | 有设置、持久化和启动恢复；失败时原生状态与持久化状态不一致。 |
+| V0.2 关闭到托盘 | 基本实现 | `CloseRequested` 被拦截后隐藏窗口；需桌面端手测退出行为。 |
 
-## 问题清单
+## 本轮发现的问题
 
-### P0：OpenAI 用量查询接口和响应结构错误
+### P0：托盘菜单切换模式不会同步 React，Mini/小球界面会被完整页替代并裁切
 
-- 位置：`src-tauri/src/providers/openai.rs`
-- 当前代码请求 `<baseUrl>/usage?start_time=...`，并将每个 `data` 元素直接解析为 `result.input_tokens` 等字段。
-- 当前 OpenAI 官方接口为 `GET /organization/usage/completions`，费用为 `GET /organization/costs`；响应的 bucket 中包含 `results` 数组，而不是当前代码的单个 `result`。官方文档同时将其列在 Administration/Organization Usage API 下，接入前还应明确要求用户配置具备该权限的密钥。[OpenAI Usage API](https://developers.openai.com/api/reference/resources/admin/subresources/organization/subresources/usage)
-- 后果：OpenAI Provider 会收到 404/403，或在响应解析后得到全零数据，核心 V0.1 功能不可用。
-- 建议：以官方 `/organization/usage/completions` 与 `/organization/costs` 重写客户端；处理 `results` 聚合、分页和时间区间，并在 UI 明示所需密钥权限与不支持的账户类型。
+- 位置：`src-tauri/src/lib.rs:76-80,117-124`，`src/App.tsx:12-31`。
+- 标题栏调用 `set_window_mode` 后会返回 `WindowState`，React 因而正确更新为 `MiniBall`。但托盘菜单改走 `switch_window_mode`：它仅调用 `window_mode::apply_mode`，改变尺寸和持久化设置，没有发送事件给 WebView，也没有让前端再次读取状态。
+- 结果：用户从托盘选择 Mini 或小球后，原生窗口变成 280×96 / 72×72，但 React 仍持有初始 `mode === "full"` 并渲染完整 Dashboard，界面不可用。
+- 修复：将模式切换收敛为单一状态源。推荐在 Rust 成功应用模式后通过 `app.emit("window-mode-changed", state)` 发送事件，前端 `listen` 后设置 `mode`；或让托盘仅发出事件、由前端统一调用 command。启动恢复也应以同一机制同步，避免首帧尺寸与页面不匹配。
 
-### P0：同名 Provider 会覆盖同一条 API Key 凭据
+### P1：左键托盘菜单与“左键显示/隐藏窗口”同时配置，交互冲突
 
-- 位置：`src-tauri/src/storage.rs` 的 `account_for`，以及 `src-tauri/src/settings.rs` 的新增逻辑。
-- 凭据 account 仅由 Provider 名称清洗后生成，例如两个名称均为“OpenAI 主账户”的记录都会使用 `provider_OpenAI_主账户`。数据库没有名称唯一约束，因此第二次添加会覆盖第一次的 key；删除其中任一记录还会删除另一记录仍在使用的 key。
-- 后果：用户可正常创建两个账户，但刷新会使用错误密钥，或删除一个账户后另一个账户失效。
-- 建议：先生成不可预测且唯一的 key id（UUID/数据库 id），以该 id 构造 keyring account；为迁移与删除保留明确的引用。不要以展示名称作为凭据主键。
+- 位置：`src-tauri/src/lib.rs:74-100`。
+- 代码设定 `.show_menu_on_left_click(true)`，同时在左键抬起事件中执行 `toggle_main_window`。Tauri 文档说明该选项会让左键显示菜单；若要自行处理左键显示窗口，应把它设为 `false`。[Tauri 系统托盘文档](https://v2.tauri.app/learn/system-tray/)
+- 后果：一次左键既可能弹出菜单又改变窗口可见性，体验不可预测，也与 README 的“左键单击切换窗口可见性”不一致。
+- 修复：选择一种明确交互：保留右键菜单、左键切换显示/隐藏时设置 `show_menu_on_left_click(false)`；若希望左键打开菜单，则删除左键事件处理。
 
-### P1：刷新全部账户时静默丢弃失败，界面会展示陈旧或空数据
+### P1：旧版安装升级后仍保留旧的、按名称生成的凭据引用
 
-- 位置：`src-tauri/src/commands.rs` 的 `refresh_all`。
-- 每个 Provider 的错误只写入后端标准错误输出，命令仍返回 `Ok(out)`。前端因此不会进入 `catch`，也不会看到失败原因；以前成功的数据仍停留在卡片中。
-- 后果：密钥失效、网络故障或 OpenAI 403 时，用户无法判断余额/用量是否可信。
-- 建议：返回按 Provider 对应的成功/失败结果（包含 `provider_id`、更新时间和可展示错误），或在全量刷新至少聚合失败并让前端显式标识“数据已过期/刷新失败”。
+- 位置：`src-tauri/src/storage.rs`、`src-tauri/src/db/mod.rs`。
+- 新建 Provider 已使用 UUID，解决了同名账户覆盖；但数据库 schema 版本仍停留在 2，且没有把已存在的 `provider_<name>` key_ref 迁移成 UUID 引用。V0.1 用户若已有同名记录，其冲突和删除互相影响问题仍会保留。
+- 修复：新增迁移版本。逐条读取旧 `key_ref` 对应的凭据，生成 UUID key，复制密钥、更新数据库引用，并在确认数据库事务成功后清理旧凭据；无法读取的记录应保留并提示用户重新录入，不可静默丢失。
 
-### P1：历史表记录的是 30 天累计数，不能用于日报、趋势或费用预测
+### P1：窗口状态持久化失败时，原生窗口状态可能与 UI/数据库不一致
 
-- 位置：`src-tauri/src/providers/openai.rs`、`src-tauri/src/commands.rs` 的 `record_usage`。
-- OpenAI 代码把最近 30 天 bucket 的 token 求和后写入当天 `usage_history.tokens`。每天 UPSERT 的是“截至当前的滚动 30 天总量”，而不是该日 token；`today_cost` 也从未填充。
-- 后果：未来按该表绘制的日/周/月曲线会严重失真，预测也没有可信输入。
-- 建议：以 UTC 或用户时区定义日边界，保存单日 bucket 的 token/cost；在同一天内按最新单日累计覆盖，或保存原始快照并计算差量。将滚动周期统计与历史日值分开建模。
+- 位置：`src-tauri/src/window_mode.rs:66-96`。
+- `apply_mode` 先修改窗口尺寸和可缩放性，再写入 settings；`set_always_on_top` 先改变原生置顶状态，再写数据库。若写库失败，command 返回错误、前端认为操作失败，但原生窗口已经改变，下一次启动又会恢复旧值。
+- 修复：保留修改前的窗口状态，在持久化失败时补偿恢复；或先持久化后改原生窗口，并在后续失败时回滚数据库。所有分支都应返回与真实状态一致的 `WindowState`。
 
-### P1：凭据库与数据库操作不是原子操作，失败会留下错误状态
+### P2：未恢复或保存用户调整过的完整窗口大小、位置和 Mini/小球位置
 
-- 位置：`src-tauri/src/settings.rs` 的 `add_provider`、`update_provider`、`delete_provider`。
-- 新增时先写 keyring、再写数据库，数据库写入失败会遗留凭据；更新时先更新数据库、再更新 keyring，后者失败会让展示配置与实际密钥状态不一致；删除时先删除数据库，并且忽略凭据删除失败。
-- 后果：凭据残留、密钥无法追踪或账户配置已更新但实际请求仍使用旧 key。
-- 建议：设计补偿逻辑：数据库失败后删除刚写入的 key；更新前读取旧状态并在后续失败时回滚；删除失败应记录待清理项或向用户报告。对数据库侧使用事务。
+- 位置：`src-tauri/src/window_mode.rs`。
+- 每次切回 Full 都固定为 460×720，启动恢复也只恢复模式与置顶；用户拖动 Mini/小球后的位置没有保存，Full 模式下调整的尺寸同样不会保存。
+- 影响：基础“三模式”可工作后仍不符合桌面监控工具的使用预期，尤其小球模式难以保持在用户放置的位置。
+- 建议：监听 moved/resized 事件，以逻辑坐标和显示器信息保存各模式的位置、Full 尺寸；恢复时进行工作区边界校正。窗口吸附、鼠标穿透和自动隐藏仍是后续 mission 的未实现项，应在 README 中标明状态。
 
-### P1：刷新调度存在重置与并发竞态，后台策略也不完整
+### P2：刷新调度只覆盖 WebView 可见性/焦点，未实现系统唤醒刷新
 
-- 位置：`src/pages/Dashboard.tsx`。
-- 定时器 effect 依赖 `refreshingIds.size`。每次刷新开始/结束都会销毁并创建新的定时器；由于状态更新异步，手动刷新、聚焦刷新和 tick 仍可能重叠。`Math.max(5, intervalOf())` 的单位是毫秒，保护值实际为 5ms 而非 5 秒。
-- 后果：短时间内可能重复请求 API，违反低频刷新目标并消耗额度；用户设置异常值时尤其明显。
-- 建议：用 `useRef` 保存“正在刷新”和定时器；以单一调度循环保证一次只存在一个刷新任务；把最小值明确为 `5_000` 毫秒，并在前、后端都限制合理区间。用 Tauri 窗口事件/系统唤醒事件实现真正的前后台和唤醒刷新。
+- 位置：`src/pages/Dashboard.tsx:93-123`。
+- 单飞机制已改善重复请求问题，但刷新在前端内运行。设备睡眠后不会立即刷新；最小前台间隔使用 `Math.max(..., 5)`，和后端最小 10 秒的约束也不完全一致（尽管后端会阻止设置为 5）。
+- 建议：统一最小值为 10 秒；使用 Tauri 的窗口/系统电源事件或后端任务处理唤醒后刷新，并将后台刷新定义为窗口隐藏、最小化还是应用失焦，避免依赖浏览器 `visibilityState` 的平台差异。
 
-### P2：服务端未验证 Provider 类型与 API URL
+### P2：OpenAI Provider 仍缺少真实接口行为所需的分页与权限体验验证
 
-- 位置：`src-tauri/src/settings.rs` 的 `add_provider` / `update_provider`。
-- 仅检查非空，未验证 `provider_type` 已在注册表中，也未将 `api_url` 解析为允许的 HTTPS URL。前端限制不能替代 command 层验证。
-- 后果：可保存永远不能刷新的类型或畸形 URL；作为桌面应用中的网络请求入口，也扩大了向本机/内网地址发送带认证请求的风险。
-- 建议：command 层依据 `ProviderManager` 白名单验证类型；使用 URL 解析器校验 scheme，官方 Provider 固定可信 host，自定义 Provider 另设显式风险提示和限制策略。
+- 位置：`src-tauri/src/providers/openai.rs`。
+- 已修正为 `/organization/usage/completions` 和 `/organization/costs`，并支持 `results[]` 聚合；但响应中的 `has_more` / `next_page` 未处理。当前 30 天、按天、`limit=100` 通常足够，仍应显式验证或实现分页以避免数据静默截断。该接口需 Organization Admin 权限，UI 也未提示普通项目 API Key 会失败。
+- 建议：为真实响应、403/权限不足和分页场景加入集成测试；在 OpenAI 账户表单旁提示“需组织管理员密钥”，并把可行动的失败说明显示给用户。
 
-### P2：刷新设置允许不合理的数值，前后端约束不一致
+### P2：删除凭据失败只记录后端日志，用户无法得知仍有残留敏感凭据
 
-- 位置：`src/pages/Settings.tsx` 和 `src-tauri/src/commands.rs` 的 `set_refresh_settings`。
-- HTML 的 `min` 不会阻止手工输入/调用，后端只拒绝 0，不拒绝 1 秒、超大值或前台大于后台等逻辑异常。
-- 后果：用户可设置极高频请求，触发 API 限流或费用异常。
-- 建议：后端作为最终边界，限定例如前台 10–3600 秒、后台 60–3600 秒，并要求后台间隔不小于前台；返回清晰校验错误。
+- 位置：`src-tauri/src/settings.rs:175-179`。
+- 删除数据库记录后，keyring 清理失败仅 `eprintln!`。这比静默忽略更好，但用户没有恢复路径，之后也没有待清理队列。
+- 建议：至少让命令返回“账户已删除但凭据清理失败”的明确状态；更稳妥的是记录待清理项，在启动时重试并提供诊断页。
 
-### P2：`keyRef` 不必要地暴露给前端
+### P3：安全基线仍偏弱
 
-- 位置：`ProviderConfig`（Rust）与 `src/types.ts`。
-- 虽然 `key_ref` 不是 API Key，但它是系统凭据库中账户记录的定位信息，界面不需要它。
-- 后果：增加了凭据元数据泄露与未来误用的攻击面。
-- 建议：拆分数据库实体与前端 DTO，`list_providers`、新增和更新的返回值中移除 `keyRef`。
+- 位置：`src-tauri/tauri.conf.json:28`。
+- `csp` 仍为 `null`。当前 UI 未加载外部内容，风险有限；但后续增加自定义 Provider、插件、主题或外部页面时会放大 XSS 的影响。
+- 建议：尽早定义最小 CSP，只保留应用实际需要的 `connect-src`、样式和资源来源。
 
-### P2：没有自动化测试，后端未在当前环境验证
+## 上轮问题修复复核
 
-- 位置：全项目。
-- 未发现单元、集成或端到端测试。当前机器缺少 `cargo`，Tauri/Rust 代码也没有实际编译。
-- 后果：Provider JSON 解析、迁移升级、凭据异常与刷新策略等高风险路径无法回归验证。
-- 建议：至少补充 Rust 单元测试（迁移、key_ref 唯一性、OpenAI/DeepSeek fixture 解析、刷新结果）和前端组件/调度测试；在 CI 执行 `pnpm build`、`cargo check`、`cargo test`。
+| 上轮问题 | 结果 | 说明 |
+| --- | --- | --- |
+| OpenAI 调用旧 `/usage` 接口 | 已修复 | 改为 Organization Usage/Costs，并增加 bucket 聚合测试。 |
+| 同名账户凭据覆盖 | 对新账户已修复 | UUID 引用已正确采用；历史数据未迁移。 |
+| 全量刷新静默吞错 | 已修复 | `RefreshResult` 返回逐账户成功/失败，卡片显示错误。 |
+| 历史记录使用 30 天累计 | 基本修复 | 注释和代码改为写入当日 input/output bucket 的 token；仍应真实验证“最后一个 bucket”是否为当天。 |
+| 刷新并发/错误间隔单位 | 已修复 | 已使用 `useRef` 单飞与毫秒常量。 |
+| Provider 类型与 URL 无后端验证 | 已修复 | 适配器白名单、HTTPS/本机回环规则已加入。 |
+| 刷新设置无边界 | 已修复 | 后端限制前台 10–3600 秒、后台 60–3600 秒，且后台不小于前台。 |
+| `keyRef` 暴露给前端 | 已修复 | Rust 字段 `skip_serializing`，前端类型已移除。 |
+| 无测试 | 部分修复 | 已新增若干 Rust 单测，但无法在本机执行，缺 UI/E2E 测试。 |
 
-## 其他不合理或未达成项
+## 推荐修复顺序
 
-- `mission.md` 和 `README.md` 的文本包裹了写作块标记及多余代码围栏，README 在常见渲染器中会出现乱码/格式异常；应清理为普通 UTF-8 Markdown。
-- README 宣称“SQLite WAL、版本化迁移”“后台 60 秒刷新”等能力已完整可用，但缺少 Rust 实际构建与桌面端验证，且后台/唤醒调度没有后端实现，表述应降级为“已实现基础代码”。
-- `ProviderType` 前端联合类型包含 `codex` 和 `custom`，后端注册表却只有 `deepseek`、`openai`，类型定义与实际功能不一致。
-- `refresh_provider` 命令已经实现，但 Dashboard 没有单卡片刷新入口；批量刷新一个账户失败也会让所有卡片显示“刷新中”。
-- DeepSeek 只读取 `balance_infos.first()`，没有处理账户不可用字段或多币种余额，展示精度和可解释性不足。
-- 数据库连接使用全局 `Mutex<Connection>`；网络请求虽然在锁外，但所有数据库读写仍串行。V0.1 可接受，后续增加历史查询和后台任务时应考虑连接池或专用数据库线程。
-- `csp` 配置为 `null`。桌面端若未来引入外部内容、富文本或插件，这会降低 XSS 防护；建议尽早设定最小可用 CSP。
-
-## 建议修复顺序
-
-1. 重写 OpenAI Provider（接口、认证要求、分页、响应聚合、费用）并以真实或 mock 响应测试。
-2. 将 keyring 引用改为与 Provider 记录一一对应的随机 ID，并补齐新增/更新/删除失败补偿。
-3. 让批量刷新返回逐账户状态，在 UI 显示错误与数据过期状态。
-4. 修正历史数据口径与刷新调度的单飞控制、数值校验。
-5. 安装 Rust 工具链后运行后端检查，并建立最小 CI 测试集。
-
+1. 使用 Tauri event 或统一前端状态源，修复托盘模式切换与 React 视图同步。
+2. 将托盘交互定为“左键显示/隐藏、右键菜单”或“左键菜单”，删除另一套冲突行为。
+3. 增加 V3 数据迁移，安全处理旧 `key_ref`；为 keyring 删除失败提供可见的恢复路径。
+4. 安装 Rust 工具链并执行 `cargo check`、`cargo test`、`pnpm tauri dev`，手测三种模式、托盘、关闭到托盘和重启恢复。
+5. 补充窗口状态保存、系统唤醒刷新与 Provider 真实接口集成测试。

@@ -1,7 +1,5 @@
 下面是整理给 **Reasonix / AI 编程代理** 使用的项目方案文档。定位是让 Reasonix 能根据该 Markdown 直接进行项目初始化、架构设计和后续开发。
 
-```
-:::writing{variant="document" id="58391" title="AI API Token Monitor 桌面软件开发方案"}
 # AI API Token Monitor 开发方案
 
 ## 1. 项目名称
@@ -114,7 +112,6 @@ AI API Monitor
 
 └── Providers
 
-```
 ├── OpenAI
 ├── Codex
 ├── DeepSeek
@@ -122,6 +119,7 @@ AI API Monitor
 ├── Anthropic
 ├── Gemini
 └── Custom Provider
+```
 ---
 
 # 5. Provider 设计
@@ -146,7 +144,7 @@ src/providers/
 ```
 统一数据格式：
 
-​```typescript
+```typescript
 interface ProviderUsage {
 
     provider:string;
@@ -736,5 +734,3 @@ SQLite
 - 剩余时间
 
 并通过自定义 UI 形成个人 AI 工作台。
-:::
-\```

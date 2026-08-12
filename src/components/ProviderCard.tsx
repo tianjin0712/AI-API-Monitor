@@ -6,10 +6,18 @@ interface Props {
   usage?: ProviderUsage;
   error?: string;
   refreshing: boolean;
+  /** 单卡片刷新入口 */
+  onRefresh?: () => void;
 }
 
 /** Dashboard 上的单个 Provider 状态卡片 */
-export default function ProviderCard({ provider, usage, error, refreshing }: Props) {
+export default function ProviderCard({
+  provider,
+  usage,
+  error,
+  refreshing,
+  onRefresh,
+}: Props) {
   const balance = usage?.balance ?? null;
   const remaining = usage?.remaining ?? null;
   const todayCost = usage?.todayCost ?? null;
@@ -47,6 +55,28 @@ export default function ProviderCard({ provider, usage, error, refreshing }: Pro
         </div>
         {refreshing && (
           <span className="animate-pulse-soft h-2 w-2 rounded-full bg-accent" />
+        )}
+        {!refreshing && onRefresh && (
+          <button
+            aria-label="刷新此账户"
+            title="刷新此账户"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRefresh();
+            }}
+            className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-white/10 hover:text-text-primary"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path
+                d="M10 6a4 4 0 1 1-1.17-2.83M10 1.5V4H7.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         )}
       </div>
 

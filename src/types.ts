@@ -1,6 +1,10 @@
 // 与 Rust 后端交互的类型定义（字段 camelCase 与 ProviderUsage/ProviderConfig 对齐）
 
-export type ProviderType = "deepseek" | "openai" | "codex" | "custom";
+/**
+ * 已注册的 Provider 类型（与后端 ProviderManager 注册表一致）。
+ * 下拉选项来自 supported_provider_types 命令（动态），此处仅为静态提示。
+ */
+export type ProviderType = "deepseek" | "openai";
 
 export interface ProviderConfig {
   id: number;

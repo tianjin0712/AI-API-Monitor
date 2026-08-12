@@ -27,8 +27,19 @@ struct BalanceInfo {
 
 #[derive(Debug, Deserialize)]
 struct BalanceResponse {
+    /// None = 响应未提供该字段（视为可用），Some(false) = 明确不可用。
+    #[serde(default)]
+    is_available: Option<bool>,
     #[serde(default)]
     balance_infos: Vec<BalanceInfo>,
+}
+
+/// 多币种选择：优先 CNY，否则取首个条目（纯函数，便于测试）。
+fn pick_balance(infos: &[BalanceInfo]) -> Option<&BalanceInfo> {
+    infos
+        .iter()
+        .find(|i| i.currency == "CNY")
+        .or_else(|| infos.first())
 }
 
 #[async_trait]
@@ -62,8 +73,14 @@ impl ProviderAdapter for DeepSeekProvider {
             .await
             .map_err(|e| ProviderError::Api(format!("响应解析失败: {e}")))?;
 
+        // 账户不可用状态显式上报（而非静默展示空余额）；
+        // None（未提供字段）视为可用，避免网关包装响应误报
+        if data.is_available == Some(false) {
+            return Err(ProviderError::Api("账户不可用（is_available=false）".into()));
+        }
+
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
-        if let Some(info) = data.balance_infos.first() {
+        if let Some(info) = pick_balance(&data.balance_infos) {
             usage.balance = info.total_balance.parse::<f64>().ok();
             usage.currency = info.currency.clone();
         }
@@ -95,5 +112,39 @@ mod tests {
         let json = r#"{ "is_available": false, "balance_infos": [] }"#;
         let resp: BalanceResponse = serde_json::from_str(json).expect("parse ok");
         assert!(resp.balance_infos.is_empty());
+        assert_eq!(resp.is_available, Some(false));
+    }
+
+    #[test]
+    fn missing_is_available_is_treated_as_available() {
+        let json = r#"{ "balance_infos": [ { "currency": "CNY", "total_balance": "10" } ] }"#;
+        let resp: BalanceResponse = serde_json::from_str(json).expect("parse ok");
+        assert_eq!(resp.is_available, None, "缺失字段应为 None（视为可用）");
+    }
+
+    #[test]
+    fn pick_balance_prefers_cny_over_first() {
+        let infos = vec![
+            BalanceInfo { currency: "USD".into(), total_balance: "5".into() },
+            BalanceInfo { currency: "CNY".into(), total_balance: "48.32".into() },
+        ];
+        let picked = pick_balance(&infos).expect("has info");
+        assert_eq!(picked.currency, "CNY");
+        assert_eq!(picked.total_balance, "48.32");
+    }
+
+    #[test]
+    fn pick_balance_falls_back_to_first_when_no_cny() {
+        let infos = vec![
+            BalanceInfo { currency: "USD".into(), total_balance: "5".into() },
+            BalanceInfo { currency: "JPY".into(), total_balance: "700".into() },
+        ];
+        let picked = pick_balance(&infos).expect("has info");
+        assert_eq!(picked.currency, "USD");
+    }
+
+    #[test]
+    fn pick_balance_empty_returns_none() {
+        assert!(pick_balance(&[]).is_none());
     }
 }
