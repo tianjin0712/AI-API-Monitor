@@ -19,7 +19,10 @@ impl Db {
     }
 
     /// 便捷方法：加锁执行只读闭包。
-    pub fn with_conn<T>(&self, f: impl FnOnce(&Connection) -> rusqlite::Result<T>) -> rusqlite::Result<T> {
+    pub fn with_conn<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<T> {
         let conn = self.0.lock().expect("db mutex poisoned");
         f(&conn)
     }
@@ -269,7 +272,8 @@ mod tests {
         );
 
         // 删除 provider，usage_history 应级联清空
-        conn.execute("DELETE FROM providers WHERE id = 1", []).unwrap();
+        conn.execute("DELETE FROM providers WHERE id = 1", [])
+            .unwrap();
         let remaining: i64 = conn
             .query_row("SELECT COUNT(*) FROM usage_history", [], |r| r.get(0))
             .unwrap();

@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { DailyUsage, Prediction, ProviderConfig } from "../types";
+import { getPredictionUnavailableReason } from "../utils/prediction";
 
 interface Props {
   providers: ProviderConfig[];
+  /** 用量刷新成功后变化，触发历史与预测重新读取。 */
+  historyRevision: number;
 }
 
 /** V0.5 趋势 Widget：Token/费用历史折线 + 消耗预测（mission.md §5/§13） */
-export default function TrendWidget({ providers }: Props) {
+export default function TrendWidget({ providers, historyRevision }: Props) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [history, setHistory] = useState<DailyUsage[]>([]);
   const [prediction, setPrediction] = useState<Prediction | null>(null);
@@ -51,7 +54,7 @@ export default function TrendWidget({ providers }: Props) {
       setPrediction(null);
       setError((e) => (e ? `${e}；预测加载失败: ${p.reason}` : `预测加载失败: ${p.reason}`));
     }
-  }, [effectiveId]);
+  }, [effectiveId, historyRevision]);
 
   useEffect(() => {
     void load();
@@ -74,6 +77,7 @@ export default function TrendWidget({ providers }: Props) {
     return { x, y };
   });
   const polyline = points.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  const predictionUnavailableReason = getPredictionUnavailableReason(prediction);
 
   return (
     <section className="glass p-4">
@@ -139,7 +143,7 @@ export default function TrendWidget({ providers }: Props) {
       </div>
 
       {/* 预测（mission.md §13） */}
-      {prediction && (
+      {prediction && prediction.samples > 0 && (
         <div className="mt-2 flex flex-wrap gap-2 text-center">
           <Mini label="日均消耗" value={prediction.dailyCostAvg.toFixed(2)} />
           <Mini
@@ -161,9 +165,9 @@ export default function TrendWidget({ providers }: Props) {
           基于近 {prediction.daysSpan} 天中 {prediction.samples} 个有效费用样本。
         </p>
       )}
-      {!prediction && !error && history.length > 0 && (
+      {!error && predictionUnavailableReason && (
         <p className="mt-2 text-[10px] text-text-muted">
-          当前账户无余额或日均消耗为 0，暂无法预测耗尽时间。
+          {predictionUnavailableReason}
         </p>
       )}
     </section>

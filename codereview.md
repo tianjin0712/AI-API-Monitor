@@ -480,6 +480,24 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 11：分页与预测链路（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P0：Claude 任意正常多页响应被误报为超过 100 页 | ✅ 已修复 | 分页循环改用显式 `completed` 标记（`advance_page` 纯函数：翻页后 `has_more=false` 清空 page 并返回完成）；不再用 `page.is_some()` 推断触顶——多页正常响应正确合并并返回；新增状态机测试（正常翻页完成/重复 cursor/缺 cursor） |
+| P1：OpenAI 超过 5 页静默截断 | ✅ 已修复 | `fetch_usage_pages`/`fetch_costs_pages` 与 Claude 分页器语义统一：`completed` 显式标记、重复 cursor 检测、cursor URL 编码、`MAX_PAGES` 5→100 且触顶显式报错（不再把截断当成功） |
+| P1：分页 cursor 未 URL 编码 | ✅ 已修复 | 共享 `next_page_url` 用 `Url::query_pairs_mut().append_pair` 编码（opaque token，原查询参数保留），openai/claude 均改用 + 编码断言测试 |
+| P1：Claude Cost 未显式按日聚合 | ✅ 已修复 | cost_report 显式加 `bucket_width=1d`，与 Usage 按日 bucket 口径一致 |
+| P2：预测耗尽日期向下截断偏早 | ✅ 已修复 | 耗尽日期按 ceil 取整（1.9 天 → 2 天后）+ 边界测试 |
+| P2：通知发送失败被当作已通知 | ✅ 已修复 | 仅 `show()` 成功才记录已通知级别；失败 eprintln 日志并保留旧级别（下次同级别可重试） |
+
+### 测试状态更新
+
+- `cargo test`：**51 passed / 0 failed**（新增分页状态机 4 + 耗尽日期 ceil 1）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -1000,3 +1018,88 @@ V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构
 | OpenAI 当日 Token/费用口径 | 基本完成，需统一捕获时间与费用负值语义 |
 | Claude 当日 Token/费用口径 | 未完成，存在排他结束时间归日错误 |
 | V0.5 历史/趋势/预测 | 仍不可最终验收，需先修 Claude 两个 P1 |
+# 代码复审：V0.5 分页与预测链路（2026-08-13 00:08:30 +08:00）
+
+审查基线：提交 `cf285dd`（数据口径新问题修复）与 `18fbb3b`。本轮复核上一轮 4 项，并继续检查 Provider 分页状态机、时间窗口、预测和通知行为。
+
+## 结论
+
+上一轮 Claude 日期归属、非法费用、OpenAI 费用校验和请求时间统一均已正确修复，相关测试也已更新。但本轮发现 Claude 分页状态机存在 P0 级逻辑错误：任何正常的多页响应最终都会被误判成“超过 100 页”，导致大账户刷新必然失败。OpenAI 分页又存在相反问题：超过 5 页时静默返回截断数据。
+
+因此 V0.5 仍不能验收。当前阻塞点已从单日数据口径转移到分页完整性与请求安全。
+
+## 上轮问题核查
+
+| 上轮问题 | 状态 | 代码证据 |
+| --- | --- | --- |
+| Claude 排他 ending_at 归日错误 | ✅ 已修复 | `bucket_date` 优先 starting_at；仅缺失时对 ending_at 减 1ns；测试覆盖标准日 bucket。 |
+| Claude 非法费用静默为 0 | ✅ 已修复 | `parse_cents -> Result`，拒绝非法、空、负值与非有限值，聚合使用 `?` 传播。 |
+| OpenAI 费用缺少校验 | ✅ 已修复 | `validate_cost` 拒绝负值/非有限值，今日/月度聚合逐项校验。 |
+| 跨 UTC 午夜二次取 today | ✅ 已修复 | OpenAI/Claude 均复用请求开始时捕获的 `now.date_naive()`。 |
+
+## 新发现的问题
+
+### P0：Claude 任意正常多页响应最终都会被误报为超过 100 页
+
+- 位置：`src-tauri/src/providers/claude.rs:258-294`。
+- 第 1 页若 `has_more=true`，代码设置 `page=Some(cursor)`；第 2 页若正常返回 `has_more=false`，match 只执行 `break`，没有把 `page` 清为 `None`。
+- 循环退出后使用 `if page.is_some()` 判断是否触顶。由于它仍保存上一页 cursor，所有实际翻过页且正常结束的请求都会返回“分页超过 100 页仍未结束”。
+- 结果：Claude Usage 或 Cost 任一端点超过一页时，整个刷新失败，无法记录历史。
+- 修复：不要用 cursor 是否存在推断是否触顶。使用显式 `completed` 标记，遇到 `has_more=false` 时返回 `Ok(all)`；仅循环自然耗尽 MAX_PAGES 时返回截断错误。
+- 必须增加 mock HTTP/分页状态测试：第一页 more+cursor、第二页 false，应成功并合并两页；重复 cursor 应失败；连续到上限仍 more 应失败。
+
+### P1：OpenAI 超过 5 页时静默截断并当作完整数据
+
+- 位置：`src-tauri/src/providers/openai.rs:204-251`。
+- Usage/Costs 两个函数都固定 `MAX_PAGES=5`，循环耗尽后直接 `Ok(all)`；没有判断第 5 页是否仍 `has_more=true`，也没有检测重复 cursor。
+- 这正是 Claude 之前整改过的“不能把截断结果当成功”，但 OpenAI 没有同步。大组织按模型/项目产生较多结果时，30 天 Token 和费用会少算并写入历史。
+- 应抽取一个经过测试的通用分页器，至少让 OpenAI 与 Claude共享完成/重复/上限状态逻辑，避免两个实现一边误报、一边漏报。
+
+### P1：分页 cursor 未 URL 编码，可能生成错误或被解释为额外参数
+
+- 位置：`src-tauri/src/providers/claude.rs:268-271`，`src-tauri/src/providers/openai.rs:212-215,235-238`。
+- 代码用字符串 `format!("{base_url}&page={p}")` 直接拼 opaque cursor。Cursor 若包含 `+`、`&`、`=`、`%` 等字符，URL 查询语义会改变。
+- `next_page` 被文档定义为 opaque token，调用方不应假设它已 URL-safe。应通过 `reqwest::Url::query_pairs_mut().append_pair("page", cursor)` 构造下一页 URL。
+
+### P1：Claude Cost API 未显式指定每日 bucket，今日费用筛选依赖默认行为
+
+- 位置：`src-tauri/src/providers/claude.rs:107-112`。
+- Usage URL 显式传 `bucket_width=1d`，Cost URL 只有 starting/ending。后续实现却假定 CostResponse 按日 bucket 返回，并按 `starting_at` 筛选 today。
+- Anthropic 当前 Cost API 仅支持日粒度，但代码应显式表达依赖并避免服务端默认变化；建议加 `bucket_width=1d`（若官方参数支持/需要，以当前 API schema 为准）或在注释/测试中明确响应契约。
+
+### P2：预测耗尽日期直接截断小数天，UI 日期会偏早
+
+- 位置：`src-tauri/src/commands.rs:315-322`。
+- `days_left` 保留小数，但耗尽日期使用 `Duration::days(d as i64)`，向下截断。比如 1.9 天会显示后天数值 1 天对应的日期，而不是约 2 天后的日期。
+- 如果 UI 只显示日期，通常应使用 `ceil()`；或者使用小时级 Duration 后再取日期，并明确时区。当前算法会系统性提前最多近一天。
+
+### P2：系统通知发送失败被静默忽略，去重状态仍标记为已通知
+
+- 位置：`src-tauri/src/commands.rs:430-438`。
+- `.show()` 结果通过 `let _ =` 丢弃；随后无条件把级别写入 map。若用户未授权或系统调用失败，本次提醒没出现，但状态认为已通知，后续同级别不再尝试。
+- 应仅在通知成功后记录已通知级别；失败至少写日志/返回可见状态。首次授权流程也应在设置页明确触发，而不是依赖首次告警时碰运气。
+
+## 测试缺口
+
+- 现有 46 个 Rust 测试没有任何 HTTP 分页状态机测试，因此 Claude P0 与 OpenAI 截断均未被发现。
+- `parses_paginated_flag` 只验证 JSON 字段存在，不执行分页循环。
+- 预测测试覆盖平均值和阈值，但没有耗尽日期的小数天边界。
+- 通知仅测试级别函数，没有测试失败时去重状态行为。
+
+## 验证结果
+
+- `pnpm build`：通过。
+- `cargo test`（`src-tauri`）：46 passed，0 failed。
+- `git diff --check`：通过。
+- 未使用真实 Provider 凭据；未执行系统通知桌面测试。
+
+## 当前判断
+
+| 范围 | 状态 |
+| --- | --- |
+| 上一轮 4 项数据口径修复 | 已完成 |
+| Claude 单页刷新 | 基本可用 |
+| Claude 多页刷新 | 不可用（P0） |
+| OpenAI 多页完整性 | 不可信（P1 静默截断） |
+| 趋势/预测基础链路 | 基本实现，依赖上游数据完整性 |
+| V0.5 整体验收 | 不通过，先修分页状态机 |

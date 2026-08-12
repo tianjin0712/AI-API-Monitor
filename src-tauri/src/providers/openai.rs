@@ -150,16 +150,14 @@ impl ProviderAdapter for OpenAIProvider {
             .sum();
         if !today_buckets.is_empty() {
             // 合并全部同日 bucket（P2：不再只取 first()）
-            let (input, output, cached): (u64, u64, u64) = today_buckets.iter().fold(
-                (0, 0, 0),
-                |(si, so, sc), b| {
+            let (input, output, cached): (u64, u64, u64) =
+                today_buckets.iter().fold((0, 0, 0), |(si, so, sc), b| {
                     (
                         si + b.results.iter().map(|r| r.input_tokens).sum::<u64>(),
                         so + b.results.iter().map(|r| r.output_tokens).sum::<u64>(),
                         sc + b.results.iter().map(|r| r.input_cached_tokens).sum::<u64>(),
                     )
-                },
-            );
+                });
             usage.input_tokens = input;
             usage.output_tokens = output;
             usage.cached_tokens = cached;
@@ -201,7 +199,9 @@ fn validate_cost(v: f64) -> Result<f64, ProviderError> {
     Ok(v)
 }
 
-/// 分页拉取用量 buckets（has_more/next_page 循环，最多 MAX_PAGES 页，防静默截断）。
+/// 分页拉取用量 buckets（has_more/next_page 循环）。
+/// P1：与 Claude 分页器语义一致——completed 显式标记、重复 cursor 检测、cursor URL 编码、
+/// 100 页上限触顶报错（不再 5 页静默截断）。
 async fn fetch_usage_pages(
     client: &reqwest::Client,
     base_url: &str,
@@ -209,22 +209,32 @@ async fn fetch_usage_pages(
 ) -> Result<Vec<UsageBucket>, ProviderError> {
     let mut all = Vec::new();
     let mut page: Option<String> = None;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut completed = false;
     for _ in 0..MAX_PAGES {
         let url = match &page {
-            Some(p) => format!("{base_url}&page={p}"),
+            Some(p) => super::next_page_url(base_url, "page", p)?,
             None => base_url.to_string(),
         };
         let resp: UsageResponse = fetch_json(client, &url, api_key).await?;
         all.extend(resp.data);
-        match resp.next_page {
-            Some(next) if resp.has_more && !next.is_empty() => page = Some(next),
-            _ => break,
+        match super::advance_page(resp.has_more, resp.next_page.as_deref(), &mut seen, &mut page)? {
+            true => continue,
+            false => {
+                completed = true;
+                break;
+            }
         }
+    }
+    if !completed {
+        return Err(ProviderError::Api(format!(
+            "分页超过 {MAX_PAGES} 页仍未结束，数据可能不完整"
+        )));
     }
     Ok(all)
 }
 
-/// 分页拉取费用 buckets。
+/// 分页拉取费用 buckets（语义同上）。
 async fn fetch_costs_pages(
     client: &reqwest::Client,
     base_url: &str,
@@ -232,23 +242,33 @@ async fn fetch_costs_pages(
 ) -> Result<Vec<CostBucket>, ProviderError> {
     let mut all = Vec::new();
     let mut page: Option<String> = None;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut completed = false;
     for _ in 0..MAX_PAGES {
         let url = match &page {
-            Some(p) => format!("{base_url}&page={p}"),
+            Some(p) => super::next_page_url(base_url, "page", p)?,
             None => base_url.to_string(),
         };
         let resp: CostsResponse = fetch_json(client, &url, api_key).await?;
         all.extend(resp.data);
-        match resp.next_page {
-            Some(next) if resp.has_more && !next.is_empty() => page = Some(next),
-            _ => break,
+        match super::advance_page(resp.has_more, resp.next_page.as_deref(), &mut seen, &mut page)? {
+            true => continue,
+            false => {
+                completed = true;
+                break;
+            }
         }
+    }
+    if !completed {
+        return Err(ProviderError::Api(format!(
+            "分页超过 {MAX_PAGES} 页仍未结束，数据可能不完整"
+        )));
     }
     Ok(all)
 }
 
-/// 分页保护上限。
-const MAX_PAGES: usize = 5;
+/// 分页保护上限（与 Claude 分页器一致）。
+const MAX_PAGES: usize = 100;
 
 /// 发送 GET 请求并解析 JSON；非 2xx 返回带响应体的 Api 错误。
 async fn fetch_json<T: DeserializeOwned>(

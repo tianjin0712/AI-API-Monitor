@@ -103,7 +103,8 @@ mod tests {
 
     #[test]
     fn parses_user_info_response() {
-        let json = r#"{ "code": 0, "data": { "balance": "19.00", "status": "active" }, "message": "" }"#;
+        let json =
+            r#"{ "code": 0, "data": { "balance": "19.00", "status": "active" }, "message": "" }"#;
         let resp: UserInfoResponse = serde_json::from_str(json).expect("parse ok");
         assert_eq!(resp.code, 0);
         let balance = parse_balance(resp.data.as_ref().expect("has data")).expect("parsed");
@@ -115,9 +116,13 @@ mod tests {
         // V0.4 复审 P2：缺失/空/非数字余额必须显式失败，不再容忍为空
         let missing = UserInfoData { balance: None };
         assert!(parse_balance(&missing).is_err());
-        let empty = UserInfoData { balance: Some("".into()) };
+        let empty = UserInfoData {
+            balance: Some("".into()),
+        };
         assert!(parse_balance(&empty).is_err());
-        let invalid = UserInfoData { balance: Some("abc".into()) };
+        let invalid = UserInfoData {
+            balance: Some("abc".into()),
+        };
         assert!(parse_balance(&invalid).is_err());
     }
 

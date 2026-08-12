@@ -34,22 +34,13 @@ struct Geometry {
     y: f64,
 }
 
-fn rects_intersect(
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    mx: f64,
-    my: f64,
-    mwidth: f64,
-    mheight: f64,
-) -> bool {
-    width > 0.0
-        && height > 0.0
-        && x < mx + mwidth
-        && x + width > mx
-        && y < my + mheight
-        && y + height > my
+fn rects_intersect(rect: Geometry, monitor: Geometry) -> bool {
+    rect.width > 0.0
+        && rect.height > 0.0
+        && rect.x < monitor.x + monitor.width
+        && rect.x + rect.width > monitor.x
+        && rect.y < monitor.y + monitor.height
+        && rect.y + rect.height > monitor.y
 }
 
 fn is_geometry_visible(window: &tauri::WebviewWindow, geometry: Geometry, scale: f64) -> bool {
@@ -60,14 +51,18 @@ fn is_geometry_visible(window: &tauri::WebviewWindow, geometry: Geometry, scale:
         let position = monitor.position();
         let size = monitor.size();
         rects_intersect(
-            geometry.x * scale,
-            geometry.y * scale,
-            geometry.width * scale,
-            geometry.height * scale,
-            position.x as f64,
-            position.y as f64,
-            size.width as f64,
-            size.height as f64,
+            Geometry {
+                x: geometry.x * scale,
+                y: geometry.y * scale,
+                width: geometry.width * scale,
+                height: geometry.height * scale,
+            },
+            Geometry {
+                x: position.x as f64,
+                y: position.y as f64,
+                width: size.width as f64,
+                height: size.height as f64,
+            },
         )
     })
 }
@@ -180,7 +175,7 @@ pub fn apply_mode(app: &tauri::AppHandle, db: &Db, mode: WindowMode) -> Result<(
         let (ow, oh) = old_mode.size();
         let _ = window.set_size(LogicalSize::new(ow, oh));
         let _ = window.set_resizable(old_mode == WindowMode::Full);
-        return Err(e.into());
+        return Err(e);
     }
     // 通知前端同步视图（托盘路径与命令路径统一状态源）
     let _ = app.emit(EVENT_WINDOW_STATE_CHANGED, current_state(db));
@@ -202,7 +197,7 @@ pub fn set_always_on_top(app: &tauri::AppHandle, db: &Db, enabled: bool) -> Resu
     if let Err(e) = set_setting(db, SETTING_ALWAYS_ON_TOP, if enabled { "1" } else { "0" }) {
         // 补偿：恢复原置顶状态
         let _ = window.set_always_on_top(old_enabled);
-        return Err(e.into());
+        return Err(e);
     }
     // 通知前端同步（Settings 开关与事件保持一致）
     let _ = app.emit(EVENT_WINDOW_STATE_CHANGED, current_state(db));
@@ -269,19 +264,41 @@ pub fn restore_window_state(app: &tauri::App) -> tauri::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::rects_intersect;
+    use super::{rects_intersect, Geometry};
 
     #[test]
     fn negative_secondary_monitor_coordinates_are_valid() {
         assert!(rects_intersect(
-            -400.0, 100.0, 280.0, 96.0, -1920.0, 0.0, 1920.0, 1080.0
+            Geometry {
+                x: -400.0,
+                y: 100.0,
+                width: 280.0,
+                height: 96.0,
+            },
+            Geometry {
+                x: -1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
         ));
     }
 
     #[test]
     fn fully_offscreen_geometry_is_rejected() {
         assert!(!rects_intersect(
-            5000.0, 5000.0, 280.0, 96.0, 0.0, 0.0, 1920.0, 1080.0
+            Geometry {
+                x: 5000.0,
+                y: 5000.0,
+                width: 280.0,
+                height: 96.0,
+            },
+            Geometry {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
         ));
     }
 }

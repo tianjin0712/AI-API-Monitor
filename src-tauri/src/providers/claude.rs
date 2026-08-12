@@ -107,9 +107,9 @@ impl ProviderAdapter for ClaudeProvider {
         let usage_base = format!(
             "{base}/organizations/usage_report/messages?starting_at={start_s}&ending_at={end_s}&bucket_width=1d&limit=100"
         );
-        let cost_base = format!(
-            "{base}/organizations/cost_report?starting_at={start_s}&ending_at={end_s}"
-        );
+        let cost_base =
+            // P1：Cost 显式按日 bucket 聚合，与 Usage 口径一致
+            format!("{base}/organizations/cost_report?starting_at={start_s}&ending_at={end_s}&bucket_width=1d");
 
         let (usage_resp, cost_resp) = tokio::join!(
             fetch_with_pagination::<UsageResponse>(&client, &usage_base, api_key),
@@ -147,10 +147,10 @@ impl ProviderAdapter for ClaudeProvider {
             .map(|(i, o)| i + o)
             .sum();
         // 今日用量（无今天 bucket 时保持 0）
-        let (today_input, today_output) = today_usage.iter().map(|b| bucket_input_output(b)).fold(
-            (0u64, 0u64),
-            |(si, so), (i, o)| (si + i, so + o),
-        );
+        let (today_input, today_output) = today_usage
+            .iter()
+            .map(|b| bucket_input_output(b))
+            .fold((0u64, 0u64), |(si, so), (i, o)| (si + i, so + o));
         usage.input_tokens = today_input;
         usage.output_tokens = today_output;
         usage.cached_tokens = today_usage
@@ -221,9 +221,7 @@ fn bucket_input_output(bucket: &UsageBucket) -> (u64, u64) {
     let input: u64 = bucket
         .results
         .iter()
-        .map(|r| {
-            r.uncached_input_tokens + r.cache_read_input_tokens + cache_write_tokens(r)
-        })
+        .map(|r| r.uncached_input_tokens + r.cache_read_input_tokens + cache_write_tokens(r))
         .sum();
     let output: u64 = bucket.results.iter().map(|r| r.output_tokens).sum();
     (input, output)
@@ -240,7 +238,9 @@ fn cache_write_tokens(r: &UsageResult) -> u64 {
 /// P1：非法/负/非有限值显式报错，不再静默转 0 污染趋势与预测。
 fn parse_cents(value: &str) -> Result<f64, ProviderError> {
     let v: f64 = value.trim().parse().map_err(|_| {
-        ProviderError::Api(format!("Claude 成本格式非法: {value:?}（可能接口协议变化）"))
+        ProviderError::Api(format!(
+            "Claude 成本格式非法: {value:?}（可能接口协议变化）"
+        ))
     })?;
     if !v.is_finite() || v < 0.0 {
         return Err(ProviderError::Api(format!(
@@ -251,8 +251,8 @@ fn parse_cents(value: &str) -> Result<f64, ProviderError> {
 }
 
 /// 带分页的请求（has_more/next_page）。
-/// V0.4 复审 P1：不设 5 页截断——循环至 has_more=false；检测空/重复 next_page 防死循环；
-/// 设高上限（100 页）防失控，触顶返回显式错误（不把截断数据当完整结果）。
+/// P0 修复：用显式 completed 标记判断是否触顶，不再依据 cursor 是否存在——
+/// 否则正常翻页结束会被误判为"超过上限仍未结束"。
 async fn fetch_with_pagination<T>(
     client: &reqwest::Client,
     base_url: &str,
@@ -265,28 +265,23 @@ where
     let mut all = Vec::new();
     let mut page: Option<String> = None;
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut completed = false;
     for _ in 0..MAX_PAGES {
         let url = match &page {
-            Some(p) => format!("{base_url}&page={p}"),
+            Some(p) => super::next_page_url(base_url, "page", p)?,
             None => base_url.to_string(),
         };
         let resp = fetch_json::<T>(client, &url, api_key).await?;
         all.extend(resp.buckets());
-        match resp.next_page() {
-            Some(next) if resp.has_more() && !next.is_empty() => {
-                // 重复 next_page：服务端异常，避免死循环
-                if !seen.insert(next.to_string()) {
-                    return Err(ProviderError::Api(format!(
-                        "分页游标重复（服务端异常）: {next}"
-                    )));
-                }
-                page = Some(next.to_string());
+        match super::advance_page(resp.has_more(), resp.next_page(), &mut seen, &mut page)? {
+            true => continue,
+            false => {
+                completed = true;
+                break;
             }
-            Some(_) | None => break, // has_more=false 或 next_page 缺失：正常结束
         }
     }
-    // 触顶仍 has_more：数据不完整，显式报错而非静默截断
-    if page.is_some() {
+    if !completed {
         return Err(ProviderError::Api(format!(
             "分页超过 {MAX_PAGES} 页仍未结束，数据可能不完整"
         )));
@@ -394,7 +389,8 @@ mod tests {
 
     #[test]
     fn parses_paginated_flag() {
-        let json = r#"{"data": [], "has_more": true, "next_page": "page_MjAyNS0wNS0xNFQwMDowMDowMFo="}"#;
+        let json =
+            r#"{"data": [], "has_more": true, "next_page": "page_MjAyNS0wNS0xNFQwMDowMDowMFo="}"#;
         let resp: UsageResponse = serde_json::from_str(json).expect("parse ok");
         assert!(resp.has_more);
         assert!(resp.next_page.is_some());
@@ -403,10 +399,7 @@ mod tests {
     #[test]
     fn bucket_date_prefers_starting_at_and_ending_falls_back_minus_1ns() {
         // 标准日 bucket：start=8/12 00:00、end=8/13 00:00 → 归属 8/12（P1：不归到 8/13）
-        let d = bucket_date(
-            Some("2025-08-12T00:00:00Z"),
-            Some("2025-08-13T00:00:00Z"),
-        );
+        let d = bucket_date(Some("2025-08-12T00:00:00Z"), Some("2025-08-13T00:00:00Z"));
         assert_eq!(d, chrono::NaiveDate::from_ymd_opt(2025, 8, 12));
         // 仅 starting_at
         let d2 = bucket_date(Some("2025-08-12T00:00:00Z"), None);

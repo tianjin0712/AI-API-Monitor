@@ -76,7 +76,9 @@ impl ProviderAdapter for DeepSeekProvider {
         // 账户不可用状态显式上报（而非静默展示空余额）；
         // None（未提供字段）视为可用，避免网关包装响应误报
         if data.is_available == Some(false) {
-            return Err(ProviderError::Api("账户不可用（is_available=false）".into()));
+            return Err(ProviderError::Api(
+                "账户不可用（is_available=false）".into(),
+            ));
         }
 
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
@@ -125,8 +127,14 @@ mod tests {
     #[test]
     fn pick_balance_prefers_cny_over_first() {
         let infos = vec![
-            BalanceInfo { currency: "USD".into(), total_balance: "5".into() },
-            BalanceInfo { currency: "CNY".into(), total_balance: "48.32".into() },
+            BalanceInfo {
+                currency: "USD".into(),
+                total_balance: "5".into(),
+            },
+            BalanceInfo {
+                currency: "CNY".into(),
+                total_balance: "48.32".into(),
+            },
         ];
         let picked = pick_balance(&infos).expect("has info");
         assert_eq!(picked.currency, "CNY");
@@ -136,8 +144,14 @@ mod tests {
     #[test]
     fn pick_balance_falls_back_to_first_when_no_cny() {
         let infos = vec![
-            BalanceInfo { currency: "USD".into(), total_balance: "5".into() },
-            BalanceInfo { currency: "JPY".into(), total_balance: "700".into() },
+            BalanceInfo {
+                currency: "USD".into(),
+                total_balance: "5".into(),
+            },
+            BalanceInfo {
+                currency: "JPY".into(),
+                total_balance: "700".into(),
+            },
         ];
         let picked = pick_balance(&infos).expect("has info");
         assert_eq!(picked.currency, "USD");

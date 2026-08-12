@@ -56,7 +56,8 @@ pub fn validate_provider_input(
         }
         return Ok(());
     }
-    let parsed = url::Url::parse(api_url).map_err(|_| AppError::Invalid("API URL 格式无效".into()))?;
+    let parsed =
+        url::Url::parse(api_url).map_err(|_| AppError::Invalid("API URL 格式无效".into()))?;
     match parsed.scheme() {
         "https" => Ok(()),
         "http" => {
@@ -159,18 +160,19 @@ pub fn update_provider(
 ) -> Result<ProviderConfig, AppError> {
     let now = Utc::now().to_rfc3339();
     // 读取旧记录（用于回滚）
-    let old: ProviderConfig = db.with_conn(|conn| {
-        conn.query_row(
+    let old: ProviderConfig = db
+        .with_conn(|conn| {
+            conn.query_row(
             "SELECT id, name, provider_type, api_url, key_ref, enabled, created_time, updated_time
              FROM providers WHERE id = ?1",
             [id],
             row_to_provider,
         )
-    })
-    .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
-        other => AppError::Db(other),
-    })?;
+        })
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
+            other => AppError::Db(other),
+        })?;
     validate_provider_input(manager, &old.provider_type, api_url)?;
 
     db.with_conn(|conn| {
@@ -230,11 +232,9 @@ pub struct DeleteResult {
 /// 凭据清理失败时返回可见状态（不静默），供前端提示用户。
 pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
     let key_ref: Option<String> = db.with_conn(|conn| {
-        conn.query_row(
-            "SELECT key_ref FROM providers WHERE id = ?1",
-            [id],
-            |row| row.get(0),
-        )
+        conn.query_row("SELECT key_ref FROM providers WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
         .optional()
     })?;
     db.with_conn(|conn| {

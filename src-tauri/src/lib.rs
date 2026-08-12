@@ -25,8 +25,10 @@ pub fn run() {
             // 初始化 SQLite 数据库（app data 目录）
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
-            let db = Db::open(&data_dir.join("ai-api-monitor.db"))
-                .expect("failed to open database");
+            let db_path = data_dir.join("ai-api-monitor.db");
+            let db = Db::open(&db_path).map_err(|error| {
+                std::io::Error::other(format!("无法打开应用数据库 {}: {error}", db_path.display()))
+            })?;
             app.manage(db);
             app.manage(Arc::new(ProviderManager::new()));
             app.manage(commands::AlertState::default());
@@ -95,7 +97,9 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
-        &[&mode_full, &mode_mini, &mode_ball, &separator, &show, &hide, &quit],
+        &[
+            &mode_full, &mode_mini, &mode_ball, &separator, &show, &hide, &quit,
+        ],
     )?;
 
     TrayIconBuilder::new()

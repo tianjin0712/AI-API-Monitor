@@ -32,6 +32,8 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
     backgroundSecs: 60,
   });
   const [error, setError] = useState<string | null>(null);
+  // 刷新成功后递增，通知趋势 Widget 重新读取刚写入的历史与预测。
+  const [historyRevision, setHistoryRevision] = useState(0);
 
   // 单飞控制：同一时刻只允许一个刷新任务（修复 P1 并发竞态）
   const refreshingRef = useRef(false);
@@ -54,6 +56,9 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
     setError(null);
     try {
       const list = await api.refreshAll();
+      if (list.some((result) => result.success)) {
+        setHistoryRevision((revision) => revision + 1);
+      }
       setUsages((prev) => {
         const next = { ...prev };
         for (const r of list) {
@@ -109,6 +114,7 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
       try {
         const usage = await api.refreshProvider(id);
         setUsages((prev) => ({ ...prev, [id]: usage }));
+        setHistoryRevision((revision) => revision + 1);
         setErrors((prev) => {
           const next = { ...prev };
           delete next[id];
@@ -223,7 +229,7 @@ export default function Dashboard({ widgets, onWidgetsChange }: Props) {
       ) : w.type === "cost" ? (
         <CostWidget usages={usages} />
       ) : w.type === "trend" ? (
-        <TrendWidget providers={providers} />
+        <TrendWidget providers={providers} historyRevision={historyRevision} />
       ) : (
         <div className="flex flex-col gap-3">
           {providers.length === 0 ? (

@@ -99,6 +99,45 @@ impl ProviderConfig {
     }
 }
 
+/// 构造分页下一页 URL（P1：cursor 视为 opaque token，必须 URL 编码，不能直接拼接）。
+pub(crate) fn next_page_url(
+    base_url: &str,
+    param: &str,
+    cursor: &str,
+) -> Result<String, ProviderError> {
+    let mut url = url::Url::parse(base_url)
+        .map_err(|e| ProviderError::Api(format!("分页 URL 构造失败: {e}")))?;
+    url.query_pairs_mut().append_pair(param, cursor);
+    Ok(url.to_string())
+}
+
+/// 分页状态推进（纯函数，便于 mock 测试）。
+/// 返回 Ok(true)=继续下一页；Ok(false)=正常结束（has_more=false 或 cursor 缺失）。
+/// Err=重复 cursor（服务端异常）。
+pub(crate) fn advance_page(
+    has_more: bool,
+    next_page: Option<&str>,
+    seen: &mut std::collections::HashSet<String>,
+    page: &mut Option<String>,
+) -> Result<bool, ProviderError> {
+    match next_page {
+        Some(next) if has_more && !next.is_empty() => {
+            if !seen.insert(next.to_string()) {
+                return Err(ProviderError::Api(format!(
+                    "分页游标重复（服务端异常）: {next}"
+                )));
+            }
+            *page = Some(next.to_string());
+            Ok(true)
+        }
+        _ => {
+            // has_more=false 或 next_page 缺失：正常结束（P0：显式标记完成）
+            *page = None;
+            Ok(false)
+        }
+    }
+}
+
 /// Provider 查询过程中的错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -130,8 +169,14 @@ impl ProviderManager {
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
         registry.insert("codex".into(), Box::new(codex::CodexProvider));
-        registry.insert("openrouter".into(), Box::new(openrouter::OpenRouterProvider));
-        registry.insert("siliconflow".into(), Box::new(siliconflow::SiliconFlowProvider));
+        registry.insert(
+            "openrouter".into(),
+            Box::new(openrouter::OpenRouterProvider),
+        );
+        registry.insert(
+            "siliconflow".into(),
+            Box::new(siliconflow::SiliconFlowProvider),
+        );
         registry.insert("claude".into(), Box::new(claude::ClaudeProvider));
         // Gemini 暂不注册：官方无公开余额/用量查询端点，注册会造成必然失败的账户（V0.4 复审 P1）。
         Self { registry }
@@ -154,5 +199,55 @@ impl ProviderManager {
 impl Default for ProviderManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{advance_page, next_page_url, ProviderError};
+    use std::collections::HashSet;
+
+    #[test]
+    fn pagination_completes_normally_after_more_pages() {
+        // P0：翻页后 has_more=false 必须正常完成（不误判为超限）
+        let mut seen = HashSet::new();
+        let mut page = Some("cursor1".to_string());
+        // 第 1 页：more + cursor → 继续
+        assert!(advance_page(true, Some("cursor2"), &mut seen, &mut page).unwrap());
+        assert_eq!(page.as_deref(), Some("cursor2"));
+        // 第 2 页：false → 正常结束，page 清空
+        assert!(!advance_page(false, Some("cursor3"), &mut seen, &mut page).unwrap());
+        assert_eq!(page, None, "正常结束应清空 page");
+    }
+
+    #[test]
+    fn pagination_rejects_duplicate_cursor() {
+        let mut seen = HashSet::new();
+        let mut page = None;
+        assert!(advance_page(true, Some("c1"), &mut seen, &mut page).unwrap());
+        let err = advance_page(true, Some("c1"), &mut seen, &mut page);
+        assert!(matches!(err, Err(ProviderError::Api(_))), "重复 cursor 应报错");
+    }
+
+    #[test]
+    fn pagination_missing_cursor_is_complete() {
+        // has_more=true 但 cursor 缺失：按正常结束处理（避免死循环）
+        let mut seen = HashSet::new();
+        let mut page = Some("x".to_string());
+        assert!(!advance_page(true, None, &mut seen, &mut page).unwrap());
+        assert_eq!(page, None);
+    }
+
+    #[test]
+    fn next_page_url_encodes_cursor() {
+        // P1：cursor 视为 opaque token，必须 URL 编码
+        let url = next_page_url(
+            "https://api.example.com/v1/x?start=1",
+            "page",
+            "a b&c=1",
+        )
+        .unwrap();
+        assert!(url.contains("page=a+b%26c%3D1"), "cursor 应被 URL 编码: {url}");
+        assert!(url.contains("start=1"), "原查询参数应保留: {url}");
     }
 }

@@ -40,14 +40,14 @@ impl SecureStorage {
     /// 读取 API Key（按 key_ref）。
     pub fn get_api_key(key_ref: &str) -> Result<String, StorageError> {
         let (_service, account) = parse_ref(key_ref)?;
-        let entry = Entry::new(KEYRING_SERVICE, &account)?;
+        let entry = Entry::new(KEYRING_SERVICE, account)?;
         Ok(entry.get_password()?)
     }
 
     /// 删除 API Key（按 key_ref）。
     pub fn delete_api_key(key_ref: &str) -> Result<(), StorageError> {
         let (_service, account) = parse_ref(key_ref)?;
-        let entry = Entry::new(KEYRING_SERVICE, &account)?;
+        let entry = Entry::new(KEYRING_SERVICE, account)?;
         entry.delete_credential()?;
         Ok(())
     }
@@ -55,7 +55,7 @@ impl SecureStorage {
     /// 更新 API Key（key_ref 不变）。
     pub fn update_api_key(key_ref: &str, api_key: &str) -> Result<(), StorageError> {
         let (_service, account) = parse_ref(key_ref)?;
-        let entry = Entry::new(KEYRING_SERVICE, &account)?;
+        let entry = Entry::new(KEYRING_SERVICE, account)?;
         entry.set_password(api_key)?;
         Ok(())
     }

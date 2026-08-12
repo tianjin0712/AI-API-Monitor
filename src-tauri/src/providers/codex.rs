@@ -122,10 +122,7 @@ impl ProviderAdapter for CodexProvider {
                 .and_then(|s| s.resets_at.as_ref())
                 .and_then(normalize_timestamp);
             // 剩余额度：优先 credits.balance/remaining，其次 spend_control.remaining_percent
-            usage.balance = rlc
-                .credits
-                .as_ref()
-                .and_then(|c| c.balance.or(c.remaining));
+            usage.balance = rlc.credits.as_ref().and_then(|c| c.balance.or(c.remaining));
             usage.remaining = rlc
                 .spend_control
                 .as_ref()
@@ -141,9 +138,8 @@ impl ProviderAdapter for CodexProvider {
         }
         // P1：核心数据缺失（协议变化/账号无额度字段）时显式报错，
         // 避免把"零值"当成功写入历史，无法区分真实零值与解析失败。
-        let has_quota = usage.balance.is_some()
-            || usage.remaining.is_some()
-            || usage.reset_time.is_some();
+        let has_quota =
+            usage.balance.is_some() || usage.remaining.is_some() || usage.reset_time.is_some();
         if !has_quota {
             return Err(ProviderError::Api(
                 "Codex 响应缺少额度/重置数据（可能接口协议变化或账号无额度字段）".into(),
@@ -229,7 +225,10 @@ mod tests {
     #[test]
     fn normalizes_iso_resets_at() {
         let v = serde_json::json!("2025-08-13T00:00:00Z");
-        assert_eq!(normalize_timestamp(&v).as_deref(), Some("2025-08-13T00:00:00Z"));
+        assert_eq!(
+            normalize_timestamp(&v).as_deref(),
+            Some("2025-08-13T00:00:00Z")
+        );
     }
 
     #[test]

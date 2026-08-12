@@ -30,7 +30,14 @@ pub fn add_provider(
     api_url: String,
     api_key: String,
 ) -> Result<ProviderConfig, AppError> {
-    settings::add_provider(&db, manager.inner().as_ref(), &name, &provider_type, &api_url, &api_key)
+    settings::add_provider(
+        &db,
+        manager.inner().as_ref(),
+        &name,
+        &provider_type,
+        &api_url,
+        &api_key,
+    )
 }
 
 /// 更新 Provider（api_key 传 Some 才更新密钥）。
@@ -43,7 +50,14 @@ pub fn update_provider(
     api_url: String,
     api_key: Option<String>,
 ) -> Result<ProviderConfig, AppError> {
-    settings::update_provider(&db, manager.inner().as_ref(), id, &name, &api_url, api_key.as_deref())
+    settings::update_provider(
+        &db,
+        manager.inner().as_ref(),
+        id,
+        &name,
+        &api_url,
+        api_key.as_deref(),
+    )
 }
 
 /// 删除 Provider（含 keyring 凭据清理，清理失败返回可见状态）。
@@ -119,8 +133,7 @@ pub async fn refresh_all(
     }
     let mut fetched = Vec::new();
     while let Some(res) = tasks.join_next().await {
-        let (provider, usage) = res
-            .map_err(|e| AppError::Invalid(format!("刷新任务失败: {e}")))?;
+        let (provider, usage) = res.map_err(|e| AppError::Invalid(format!("刷新任务失败: {e}")))?;
         fetched.push((provider, usage));
     }
 
@@ -316,9 +329,11 @@ pub fn predict_for(db: &Db, provider_id: i64, days: u64) -> Result<Option<Predic
     let (days_left, exhausted_date) = match (balance, daily_avg) {
         (Some(b), avg) if avg > 0.0 && b > 0.0 => {
             let d = (b / avg).max(0.0);
+            // P2：耗尽日期按 ceil 取整（1.9 天 → 2 天后），避免向下截断导致日期偏早
+            let whole_days = d.ceil() as i64;
             let date = chrono::Utc::now()
                 .date_naive()
-                .checked_add_signed(chrono::Duration::days(d as i64));
+                .checked_add_signed(chrono::Duration::days(whole_days));
             (Some(d), date.map(|x| x.to_string()))
         }
         _ => (None, None),
@@ -348,7 +363,7 @@ pub fn get_prediction(
 #[serde(rename_all = "camelCase")]
 pub enum AlertLevel {
     None,
-    Warning, // <30%
+    Warning,  // <30%
     Critical, // <10%
 }
 
@@ -427,14 +442,19 @@ pub fn check_alerts(
                 },
                 AlertLevel::None => return,
             };
-            let _ = app
-                .notification()
-                .builder()
-                .title(title)
-                .body(body)
-                .show();
+            // P2：仅通知发送成功才记录已通知级别；失败写日志（保留旧级别以便下次重试）
+            match app.notification().builder().title(title).body(body).show() {
+                Ok(()) => {
+                    map.insert(provider.id, level);
+                }
+                Err(e) => {
+                    eprintln!(
+                        "[check_alerts] 通知发送失败（provider={}，level={level:?}）: {e}",
+                        provider.name
+                    );
+                }
+            }
         }
-        map.insert(provider.id, level);
     } else if level < prev {
         map.insert(provider.id, level); // 已充值/恢复：重置，下次跌破再提醒
     }
@@ -456,7 +476,10 @@ pub fn validate_layout_json(layout: &str) -> Result<(), String> {
     }
     let value: serde_json::Value =
         serde_json::from_str(layout).map_err(|e| format!("布局 JSON 无效: {e}"))?;
-    let theme = value.get("theme").and_then(|t| t.as_str()).unwrap_or("dark");
+    let theme = value
+        .get("theme")
+        .and_then(|t| t.as_str())
+        .unwrap_or("dark");
     if theme != "dark" && theme != "light" {
         return Err("theme 仅支持 dark / light".into());
     }
@@ -495,7 +518,10 @@ pub fn set_layout(db: State<'_, Db>, layout: String) -> Result<(), AppError> {
 }
 
 /// 刷新间隔合法性校验（纯函数，供命令与测试复用）。
-pub fn validate_refresh_intervals(foreground_secs: u64, background_secs: u64) -> Result<(), String> {
+pub fn validate_refresh_intervals(
+    foreground_secs: u64,
+    background_secs: u64,
+) -> Result<(), String> {
     const MIN_FOREGROUND: u64 = 10;
     const MIN_BACKGROUND: u64 = 60;
     const MAX_INTERVAL: u64 = 3600;
@@ -523,8 +549,7 @@ pub fn set_refresh_settings(
     foreground_secs: u64,
     background_secs: u64,
 ) -> Result<(), AppError> {
-    validate_refresh_intervals(foreground_secs, background_secs)
-        .map_err(AppError::Invalid)?;
+    validate_refresh_intervals(foreground_secs, background_secs).map_err(AppError::Invalid)?;
     settings::set_setting(
         &db,
         settings::SETTING_REFRESH_FOREGROUND_SECS,
@@ -579,9 +604,12 @@ async fn fetch_usage(
     manager: &ProviderManager,
     provider: &ProviderConfig,
 ) -> Result<ProviderUsage, AppError> {
-    let adapter = manager
-        .get(&provider.provider_type)
-        .ok_or_else(|| AppError::Invalid(format!("不支持的 Provider 类型: {}", provider.provider_type)))?;
+    let adapter = manager.get(&provider.provider_type).ok_or_else(|| {
+        AppError::Invalid(format!(
+            "不支持的 Provider 类型: {}",
+            provider.provider_type
+        ))
+    })?;
     // 凭据来源判断：Codex 复用 CLI 本地凭证（~/.codex/auth.json），不走 keyring
     let api_key = if provider.credential_source() == crate::providers::CredentialSource::CodexCli {
         String::new()
@@ -625,16 +653,31 @@ mod tests {
         assert_eq!(super::alert_level_for(None, None), AlertLevel::None);
         assert_eq!(super::alert_level_for(Some(50.0), None), AlertLevel::None);
         assert_eq!(super::alert_level_for(Some(30.0), None), AlertLevel::None); // 边界 30% 属正常
-        assert_eq!(super::alert_level_for(Some(29.9), None), AlertLevel::Warning);
-        assert_eq!(super::alert_level_for(Some(10.0), None), AlertLevel::Warning); // 边界 10% 属警告
-        assert_eq!(super::alert_level_for(Some(9.9), None), AlertLevel::Critical);
+        assert_eq!(
+            super::alert_level_for(Some(29.9), None),
+            AlertLevel::Warning
+        );
+        assert_eq!(
+            super::alert_level_for(Some(10.0), None),
+            AlertLevel::Warning
+        ); // 边界 10% 属警告
+        assert_eq!(
+            super::alert_level_for(Some(9.9), None),
+            AlertLevel::Critical
+        );
         // 无百分比时按预测剩余天数兜底（V0.5 复审 P1）
-        assert_eq!(super::alert_level_for(None, Some(2.9)), AlertLevel::Critical);
+        assert_eq!(
+            super::alert_level_for(None, Some(2.9)),
+            AlertLevel::Critical
+        );
         assert_eq!(super::alert_level_for(None, Some(5.0)), AlertLevel::Warning);
         assert_eq!(super::alert_level_for(None, Some(7.0)), AlertLevel::None); // 边界 7 天属正常
         assert_eq!(super::alert_level_for(None, None), AlertLevel::None);
         // 百分比优先于天数
-        assert_eq!(super::alert_level_for(Some(50.0), Some(2.0)), AlertLevel::None);
+        assert_eq!(
+            super::alert_level_for(Some(50.0), Some(2.0)),
+            AlertLevel::None
+        );
     }
 
     #[test]
@@ -661,6 +704,17 @@ mod tests {
         assert!((super::daily_avg_from(&h) - 2.0).abs() < 1e-9);
         // 全 NULL → 0
         assert_eq!(super::daily_avg_from(&[mk(None)]), 0.0);
+    }
+
+    #[test]
+    fn prediction_exhaustion_date_ceils_days() {
+        // P2：1.9 天应取整为 2 天后，避免向下截断偏早
+        let today = chrono::Utc::now().date_naive();
+        let whole = (1.9_f64).ceil() as i64;
+        let date = today
+            .checked_add_signed(chrono::Duration::days(whole))
+            .unwrap();
+        assert_eq!(date, today + chrono::Duration::days(2));
     }
 
     #[test]
@@ -697,7 +751,6 @@ mod tests {
 
     #[test]
     fn layout_validation_rejects_oversize_and_too_many_widgets() {
-        let big = format!(r#"{{"theme":"dark","widgets":{}"#, vec!["[]"; 1].join(","));
         let too_many = format!(
             r#"{{"theme":"dark","widgets":[{}]}}"#,
             (0..21)
@@ -715,7 +768,6 @@ mod tests {
                 .join(",")
         );
         assert!(super::validate_layout_json(&long).is_err());
-        let _ = big;
     }
 }
 
@@ -727,8 +779,12 @@ mod codex_url_tests {
     #[test]
     fn codex_accepts_exact_official_url() {
         let m = ProviderManager::new();
-        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex").is_ok());
-        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex/").is_ok());
+        assert!(
+            validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex").is_ok()
+        );
+        assert!(
+            validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex/").is_ok()
+        );
     }
 
     #[test]
@@ -737,15 +793,35 @@ mod codex_url_tests {
         // 恶意 host
         assert!(validate_provider_input(&m, "codex", "https://evil.example.com").is_err());
         // 子域伪装（chatgpt.com.evil.test）
-        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com.evil.test/backend-api/codex").is_err());
+        assert!(validate_provider_input(
+            &m,
+            "codex",
+            "https://chatgpt.com.evil.test/backend-api/codex"
+        )
+        .is_err());
         // 非默认端口
-        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com:8443/backend-api/codex").is_err());
+        assert!(
+            validate_provider_input(&m, "codex", "https://chatgpt.com:8443/backend-api/codex")
+                .is_err()
+        );
         // userinfo
-        assert!(validate_provider_input(&m, "codex", "https://user:pass@chatgpt.com/backend-api/codex").is_err());
+        assert!(validate_provider_input(
+            &m,
+            "codex",
+            "https://user:pass@chatgpt.com/backend-api/codex"
+        )
+        .is_err());
         // 路径混淆
-        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex/../codex").is_err());
+        assert!(validate_provider_input(
+            &m,
+            "codex",
+            "https://chatgpt.com/backend-api/codex/../codex"
+        )
+        .is_err());
         // 非 https
-        assert!(validate_provider_input(&m, "codex", "http://chatgpt.com/backend-api/codex").is_err());
+        assert!(
+            validate_provider_input(&m, "codex", "http://chatgpt.com/backend-api/codex").is_err()
+        );
     }
 }
 
