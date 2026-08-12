@@ -10,8 +10,7 @@ export type ProviderType =
   | "codex"
   | "openrouter"
   | "siliconflow"
-  | "claude"
-  | "gemini";
+  | "claude";
 
 export interface ProviderConfig {
   id: number;

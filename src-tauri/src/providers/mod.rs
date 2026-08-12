@@ -10,6 +10,8 @@ use std::collections::HashMap;
 pub mod claude;
 pub mod codex;
 pub mod deepseek;
+/// 暂未注册（官方无公开余额/用量查询端点）；保留实现与说明供未来启用。
+#[allow(dead_code)]
 pub mod gemini;
 pub mod openai;
 pub mod openrouter;
@@ -127,7 +129,7 @@ impl ProviderManager {
         registry.insert("openrouter".into(), Box::new(openrouter::OpenRouterProvider));
         registry.insert("siliconflow".into(), Box::new(siliconflow::SiliconFlowProvider));
         registry.insert("claude".into(), Box::new(claude::ClaudeProvider));
-        registry.insert("gemini".into(), Box::new(gemini::GeminiProvider));
+        // Gemini 暂不注册：官方无公开余额/用量查询端点，注册会造成必然失败的账户（V0.4 复审 P1）。
         Self { registry }
     }
 
@@ -137,8 +139,11 @@ impl ProviderManager {
     }
 
     /// 已注册的 Provider 类型列表（供前端下拉选择）。
+    /// V0.4 复审 P2：排序保证顺序稳定（HashMap 遍历无序）。
     pub fn supported_types(&self) -> Vec<String> {
-        self.registry.keys().cloned().collect()
+        let mut types: Vec<String> = self.registry.keys().cloned().collect();
+        types.sort();
+        types
     }
 }
 

@@ -68,17 +68,33 @@ impl ProviderAdapter for SiliconFlowProvider {
             ));
         }
 
+        // V0.4 复审 P2：余额是该平台核心字段，缺失/非法显式报错，避免污染历史
+        let balance = data
+            .data
+            .ok_or_else(|| ProviderError::Api("SiliconFlow 响应缺少 data 字段".into()))?;
+        let balance = parse_balance(&balance)?;
+
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
         usage.currency = "¥".into(); // SiliconFlow 以人民币计费
-        // balance 为字符串，缺失视为未知（容错）
-        if let Some(balance) = data.data.and_then(|d| d.balance) {
-            if !balance.trim().is_empty() {
-                usage.balance = balance.trim().parse::<f64>().ok();
-            }
-        }
+        usage.balance = Some(balance);
         usage.updated_at = chrono::Utc::now().to_rfc3339();
         Ok(usage)
     }
+}
+
+/// 解析余额（纯函数）：缺失/空/非数字均视为错误（V0.4 复审 P2）。
+fn parse_balance(data: &UserInfoData) -> Result<f64, ProviderError> {
+    let raw = data.balance.as_deref().unwrap_or("").trim();
+    if raw.is_empty() {
+        return Err(ProviderError::Api(
+            "SiliconFlow 响应缺少余额字段（可能接口协议变化）".into(),
+        ));
+    }
+    raw.parse::<f64>().map_err(|_| {
+        ProviderError::Api(format!(
+            "SiliconFlow 余额格式非法: {raw:?}（可能接口协议变化）"
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -90,14 +106,19 @@ mod tests {
         let json = r#"{ "code": 0, "data": { "balance": "19.00", "status": "active" }, "message": "" }"#;
         let resp: UserInfoResponse = serde_json::from_str(json).expect("parse ok");
         assert_eq!(resp.code, 0);
-        assert_eq!(resp.data.as_ref().and_then(|d| d.balance.as_ref()), Some(&"19.00".to_string()));
+        let balance = parse_balance(resp.data.as_ref().expect("has data")).expect("parsed");
+        assert!((balance - 19.00).abs() < 1e-9);
     }
 
     #[test]
-    fn tolerates_missing_balance() {
-        let json = r#"{ "code": 0, "data": {} }"#;
-        let resp: UserInfoResponse = serde_json::from_str(json).expect("parse ok");
-        assert!(resp.data.unwrap().balance.is_none());
+    fn missing_balance_is_explicit_error() {
+        // V0.4 复审 P2：缺失/空/非数字余额必须显式失败，不再容忍为空
+        let missing = UserInfoData { balance: None };
+        assert!(parse_balance(&missing).is_err());
+        let empty = UserInfoData { balance: Some("".into()) };
+        assert!(parse_balance(&empty).is_err());
+        let invalid = UserInfoData { balance: Some("abc".into()) };
+        assert!(parse_balance(&invalid).is_err());
     }
 
     #[test]

@@ -26,10 +26,9 @@ const TYPE_PRESETS: Record<string, string> = {
   deepseek: "https://api.deepseek.com",
   openai: "https://api.openai.com/v1",
   codex: "https://chatgpt.com/backend-api/codex",
-  openrouter: "https://openrouter.ai/api/v1",
+  openrouter: "https://openrouter.ai",
   siliconflow: "https://api.siliconflow.cn/v1",
   claude: "https://api.anthropic.com/v1",
-  gemini: "https://generativelanguage.googleapis.com",
 };
 
 /** 使用 CLI 本地凭证的类型（无需输入 API Key） */
@@ -39,7 +38,6 @@ const NO_API_KEY_TYPES = new Set(["codex"]);
 const TYPE_HINTS: Record<string, string> = {
   codex: "无需 API Key：自动复用 Codex CLI 登录态（~/.codex/auth.json），请确保已运行 `codex login` 登录 ChatGPT。",
   claude: "需要组织（Organization）管理员 API Key（sk-ant-admin01-...）；个人账户不可用。Anthropic 为后付费账单，无余额查询，仅显示用量与费用。",
-  gemini: "Gemini API 无公开的余额/用量查询端点，请在 Google AI Studio 的 Billing 页面查看（aistudio.google.com）。",
 };
 
 /** 设置页：Provider 增删改查 + 刷新策略 */

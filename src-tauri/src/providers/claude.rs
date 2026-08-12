@@ -36,6 +36,10 @@ struct CacheCreation {
 #[derive(Debug, Clone, Deserialize)]
 struct UsageBucket {
     #[serde(default)]
+    starting_at: Option<String>,
+    #[serde(default)]
+    ending_at: Option<String>,
+    #[serde(default)]
     results: Vec<UsageResult>,
 }
 
@@ -64,6 +68,10 @@ struct CostAmount {
 
 #[derive(Debug, Clone, Deserialize)]
 struct CostBucket {
+    #[serde(default)]
+    starting_at: Option<String>,
+    #[serde(default)]
+    ending_at: Option<String>,
     #[serde(default)]
     results: Vec<CostResult>,
 }
@@ -113,39 +121,71 @@ impl ProviderAdapter for ClaudeProvider {
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
         usage.currency = "$".into();
 
-        // 用量：当日 = 最后 bucket；input 含未缓存/缓存读/缓存写
+        // 今日口径（V0.4 复审 P1）：按 bucket 的 UTC 日期精确筛今天，不用 last()
+        let today = chrono::Utc::now().date_naive();
+        let today_usage: Vec<&UsageBucket> = usage_data
+            .iter()
+            .filter(|b| {
+                bucket_date(b.ending_at.as_deref(), b.starting_at.as_deref())
+                    .map(|d| d == today)
+                    .unwrap_or(false)
+            })
+            .collect();
+        let today_cost_buckets: Vec<&CostBucket> = cost_data
+            .iter()
+            .filter(|b| {
+                bucket_date(b.ending_at.as_deref(), b.starting_at.as_deref())
+                    .map(|d| d == today)
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        // 近 30 天总量
         usage.total_tokens = usage_data
             .iter()
             .map(bucket_input_output)
             .map(|(i, o)| i + o)
             .sum();
-        if let Some(last) = usage_data.last() {
-            let (input, output) = bucket_input_output(last);
-            usage.input_tokens = input;
-            usage.output_tokens = output;
-            usage.cached_tokens = last
-                .results
-                .iter()
-                .map(|r| r.cache_read_input_tokens)
-                .sum();
-        }
-        // 费用：cents → USD（÷100）
+        // 今日用量（无今天 bucket 时保持 0）
+        let (today_input, today_output) = today_usage.iter().map(|b| bucket_input_output(b)).fold(
+            (0u64, 0u64),
+            |(si, so), (i, o)| (si + i, so + o),
+        );
+        usage.input_tokens = today_input;
+        usage.output_tokens = today_output;
+        usage.cached_tokens = today_usage
+            .iter()
+            .flat_map(|b| b.results.iter())
+            .map(|r| r.cache_read_input_tokens)
+            .sum();
+        // 费用：cents → USD（÷100）；今日与近 30 天
         let month_cents: f64 = cost_data
             .iter()
             .map(|b| b.results.iter().map(|r| parse_cents(&r.amount.value)).sum::<f64>())
             .sum();
         usage.month_cost = Some(month_cents / 100.0);
-        if let Some(last) = cost_data.last() {
-            let day_cents: f64 = last
-                .results
-                .iter()
-                .map(|r| parse_cents(&r.amount.value))
-                .sum();
-            usage.today_cost = Some(day_cents / 100.0);
-        }
+        let day_cents: f64 = today_cost_buckets
+            .iter()
+            .flat_map(|b| b.results.iter())
+            .map(|r| parse_cents(&r.amount.value))
+            .sum();
+        usage.today_cost = Some(day_cents / 100.0);
         usage.updated_at = now.to_rfc3339();
         Ok(usage)
     }
+}
+
+/// 解析 bucket 的 UTC 日期（优先 ending_at，回退 starting_at）；无法解析返回 None。
+fn bucket_day(ts: Option<&str>) -> Option<chrono::NaiveDate> {
+    let ts = ts?;
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .map(|dt| dt.with_timezone(&chrono::Utc).date_naive())
+        .ok()
+}
+
+/// bucket 的日期：优先 ending_at，缺失时回退 starting_at。
+fn bucket_date(bucket_ending: Option<&str>, bucket_starting: Option<&str>) -> Option<chrono::NaiveDate> {
+    bucket_day(bucket_ending).or_else(|| bucket_day(bucket_starting))
 }
 
 /// 聚合一个 bucket 的 (input, output) token。
@@ -173,7 +213,9 @@ fn parse_cents(value: &str) -> f64 {
     value.trim().parse::<f64>().unwrap_or(0.0)
 }
 
-/// 带分页的请求（has_more/next_page，上限 5 页）。
+/// 带分页的请求（has_more/next_page）。
+/// V0.4 复审 P1：不设 5 页截断——循环至 has_more=false；检测空/重复 next_page 防死循环；
+/// 设高上限（100 页）防失控，触顶返回显式错误（不把截断数据当完整结果）。
 async fn fetch_with_pagination<T>(
     client: &reqwest::Client,
     base_url: &str,
@@ -182,9 +224,10 @@ async fn fetch_with_pagination<T>(
 where
     T: PagedResponse,
 {
-    const MAX_PAGES: usize = 5;
+    const MAX_PAGES: usize = 100;
     let mut all = Vec::new();
     let mut page: Option<String> = None;
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for _ in 0..MAX_PAGES {
         let url = match &page {
             Some(p) => format!("{base_url}&page={p}"),
@@ -193,9 +236,23 @@ where
         let resp = fetch_json::<T>(client, &url, api_key).await?;
         all.extend(resp.buckets());
         match resp.next_page() {
-            Some(next) if resp.has_more() && !next.is_empty() => page = Some(next.to_string()),
-            _ => break,
+            Some(next) if resp.has_more() && !next.is_empty() => {
+                // 重复 next_page：服务端异常，避免死循环
+                if !seen.insert(next.to_string()) {
+                    return Err(ProviderError::Api(format!(
+                        "分页游标重复（服务端异常）: {next}"
+                    )));
+                }
+                page = Some(next.to_string());
+            }
+            Some(_) | None => break, // has_more=false 或 next_page 缺失：正常结束
         }
+    }
+    // 触顶仍 has_more：数据不完整，显式报错而非静默截断
+    if page.is_some() {
+        return Err(ProviderError::Api(format!(
+            "分页超过 {MAX_PAGES} 页仍未结束，数据可能不完整"
+        )));
     }
     Ok(all)
 }
@@ -298,5 +355,17 @@ mod tests {
         let resp: UsageResponse = serde_json::from_str(json).expect("parse ok");
         assert!(resp.has_more);
         assert!(resp.next_page.is_some());
+    }
+
+    #[test]
+    fn bucket_date_prefers_ending_at_and_falls_back() {
+        // ending_at 优先
+        let d = bucket_date(Some("2025-08-13T00:00:00Z"), Some("2025-08-12T00:00:00Z"));
+        assert_eq!(d, chrono::NaiveDate::from_ymd_opt(2025, 8, 13));
+        // 缺失 ending_at 回退 starting_at
+        let d2 = bucket_date(None, Some("2025-08-12T00:00:00Z"));
+        assert_eq!(d2, chrono::NaiveDate::from_ymd_opt(2025, 8, 12));
+        // 都无法解析
+        assert_eq!(bucket_date(None, None), None);
     }
 }

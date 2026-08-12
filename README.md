@@ -1,11 +1,18 @@
 # AI API Monitor
 
-实时监控 **OpenAI / DeepSeek / Codex** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
+实时监控 **OpenAI / DeepSeek / Codex / OpenRouter / Claude / SiliconFlow** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
 
 > 定位：类似 GPU Monitor / Rainmeter / macOS Widget 的 AI 资源监控中心。
 > 项目方案详见 [`mission.md`](./mission.md)。
 
 ## ✨ 功能
+
+### V0.4 更多平台
+
+- ✅ **OpenRouter**：余额（key 剩余额度）+ 今日/月度费用 + 重置时间（`/api/v1/key`）
+- ✅ **SiliconFlow（硅基流动）**：余额查询（`/user/info`；端点无官方文档页，实验性）
+- ✅ **Claude (Anthropic)**：组织级 Usage & Cost API（需 **Admin Key**，个人账户不可用；后付费无余额，仅用量/费用）
+- ❌ **Gemini**：官方无公开余额/用量查询端点（仅 AI Studio Billing 页），**暂不可添加**，请到 aistudio.google.com 查看
 
 ### V0.3 DIY UI（V0.3-alpha：排序 / 隐藏 / 双主题）
 
@@ -56,7 +63,7 @@
 ├── src-tauri/            # 后端（Rust）
 │   ├── src/
 │   │   ├── db/           #   SQLite 连接 + 迁移
-│   │   ├── providers/    #   Provider 抽象 + DeepSeek/OpenAI/Codex 适配器
+│   │   ├── providers/    #   Provider 抽象 + 7 平台适配器（deepseek/openai/codex/openrouter/siliconflow/claude/gemini）
 │   │   ├── storage.rs    #   keyring 安全存储（uuid 凭据引用）
 │   │   ├── settings.rs   #   Provider CRUD + 设置
 │   │   ├── commands.rs   #   Tauri commands
@@ -103,5 +110,4 @@ impl ProviderAdapter for MyProvider {
 
 ## 🗺️ 路线图
 
-- V0.4 Claude / Gemini / OpenRouter / SiliconFlow
 - V0.5 Token 历史、消耗曲线、费用与耗尽时间预测、额度预警

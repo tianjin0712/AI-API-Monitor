@@ -375,6 +375,26 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 5：V0.4 复审修复（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P0：OpenRouter 默认 URL 与适配器路径重复 | ✅ 已修复 | preset 改站点根 `https://openrouter.ai`；`key_url` 纯函数 + 契约测试（含自定义 base 只拼一次断言） |
+| P1：OpenRouter 美元费用误写 total_tokens | ✅ 已修复 | usage* 是 USD 费用非 Token，仅映射 today/month cost，total_tokens 保持 0 |
+| P1：Claude 分页 5 页静默截断 | ✅ 已修复 | 循环至 has_more=false；空/重复 next_page 检测防死循环；100 页上限触顶显式报错 |
+| P1：Claude "今日"取最后 bucket 不保证是今天 | ✅ 已修复 | 解析 bucket starting_at/ending_at，按 UTC 日期精确筛今天（bucket_date 回退链）+ 测试 |
+| P1：Gemini 作为可添加 Provider 必然失败 | ✅ 已修复 | 从注册表移除（supported_types/前端下拉/表单均不含），gemini.rs 保留 `#[allow(dead_code)]` 供未来启用 |
+| P2：SiliconFlow 缺/非法余额静默成功 | ✅ 已修复 | `parse_balance` 纯函数：缺失/空/非数字显式报错，不再污染历史；测试改 `missing_balance_is_explicit_error` |
+| P2：Provider 列表顺序不稳定 | ✅ 已修复 | `supported_types` 排序后返回 |
+| P2：README 未同步 V0.4 | ✅ 已修复 | 新增 V0.4 功能章节（能力/实验性/不可支持划分），Gemini 明确不可添加，路线图更新 |
+
+### 测试状态更新
+
+- `cargo test`：**39 passed / 0 failed**（新增 key_url 契约、bucket_date 测试）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -489,3 +509,91 @@ Reasonix 登记的大部分修复已经真实落入代码。本轮使用本机�
 - README 中把窗口聚焦近似描述成“含系统唤醒”不够严谨；现在前端已增加时间跳变补偿，但隐藏在托盘且系统不产生 WebView 可见性事件时，仍不能保证操作系统级即时唤醒通知。
 - `Dashboard.tsx` 同时承担请求调度、数据聚合和布局编辑，职责偏重；继续扩展完整 DIY UI 前应拆分 scheduler、aggregation 和 editor。
 - 亮色主题仍有少量 `bg-white/*`、固定强调色等暗色语义类，视觉一致性尚未完全收口。
+
+# 代码复审：V0.4（2026-08-12 22:41:06 +08:00）
+
+审查基线：提交 `25a8aba`（V0.4 更多平台）及当前提交 `f711fcd`。范围包括 OpenRouter、SiliconFlow、Claude、Gemini 适配器、设置页接入、文档和现有自动化测试。
+
+## 结论
+
+V0.4 已建立四个平台的注册与 UI 接入骨架，Claude 的 Usage/Cost 数据结构和分页方向基本正确，SiliconFlow 做了业务错误处理，Gemini 也没有伪造不存在的查询结果。但当前版本**不能按“更多平台已实现”验收**：OpenRouter 默认配置会生成错误 URL，且把美元费用误报为 Token；Claude 分页存在静默截断和“今日数据取最后一个 bucket”的口径风险；Gemini 实际不可监控却被作为普通可添加 Provider 暴露。
+
+验证结果：
+
+- `pnpm build`：通过。
+- `cargo test`：37 passed，0 failed。
+- 测试目前主要是 JSON 解析单元测试，没有 mock HTTP 请求测试，因而没有发现 OpenRouter 的重复路径问题，也没有验证 Claude 分页请求和截断行为。
+- 未调用任何用户真实 API Key，真实平台端到端行为仍未验证。
+
+## 发现的问题
+
+### P0：OpenRouter 默认 URL 与适配器路径重复，默认新增账户无法刷新
+
+- 位置：`src/pages/Settings.tsx:29`，`src-tauri/src/providers/openrouter.rs:53`。
+- 设置页默认 Base URL 是 `https://openrouter.ai/api/v1`，适配器再拼接 `/api/v1/key`，最终请求为 `https://openrouter.ai/api/v1/api/v1/key`。
+- 官方当前 Key 查询端点是 `GET https://openrouter.ai/api/v1/key`。默认配置应该使用站点根地址并由适配器追加路径，或保留当前默认地址并只追加 `/key`；两端必须统一。
+- 建议增加一个 URL 构造纯函数测试和 mock HTTP 请求测试，避免同类 Base URL 契约错误。
+
+### P1：OpenRouter 的美元费用被写入 `total_tokens`
+
+- 位置：`src-tauri/src/providers/openrouter.rs:73-77`。
+- 官方 `usage`、`usage_daily`、`usage_monthly` 是 credits/USD 使用金额，不是 Token 数量。当前把 `usage as u64` 写入 `total_tokens`，Dashboard 会把美元消费显示为 Token，并在汇总 Widget 中参与 Token 合计。
+- 应保持 `total_tokens = 0`（该端点不提供 Token），将 `usage` 放入明确的累计费用字段；现有统一模型没有累计总费用字段时，不应强塞进 Token。`usage_daily/monthly` 放入费用字段是合理的。
+
+### P1：Claude 超过 5 页时静默返回不完整数据
+
+- 位置：`src-tauri/src/providers/claude.rs:176-205`。
+- `fetch_with_pagination` 固定最多 5 页。若第 5 页仍 `has_more=true`，函数直接返回已收集部分并报告成功，随后不完整数据会写入历史。
+- 应继续分页至 `has_more=false`，或设置合理高上限并在触顶时返回显式错误；不能把截断结果作为完整数据落库。还应检测重复/空 `next_page`，防止异常服务端造成循环。
+
+### P1：Claude 的“今日”指标只是最后一个返回 bucket，不保证属于今天
+
+- 位置：`src-tauri/src/providers/claude.rs:122-145`。
+- `UsageBucket`/`CostBucket` 丢弃了 `starting_at` 与 `ending_at`，代码直接用 `last()` 作为今日值。空闲账户最后一个 bucket 可能是数日前；接口顺序变化也会令结果错误。
+- 另外 `start = now - 30 days` 与 `ending_at = now` 不是 UTC 日界线，所谓“30 天/月费用”和“今日费用”会是滚动的部分日窗口。
+- 应解析 bucket 时间，按 UTC 日期明确筛选今天；月口径需明确是近 30 个完整/部分日还是自然月，并在 UI 与存储中统一。
+
+### P1：Gemini 被注册为可添加 Provider，但设计上每次刷新必然失败
+
+- 位置：`src-tauri/src/providers/gemini.rs:16-24`，`src-tauri/src/providers/mod.rs:130`，`src/pages/Settings.tsx:32,42,102-107`。
+- 设置页要求用户输入并保存 Gemini API Key，但适配器完全不读取 Key，任何刷新都会返回“不支持”。这让用户把敏感凭据写入 keyring，却得不到任何可用功能，并持续产生失败刷新。
+- 在没有查询实现前，应从 `supported_provider_types` 中移除 Gemini，或把它做成无需 Key、不可保存的外部 Billing 页面入口。仅在提示文字里说明“不支持”不足以构成 Provider 实现。
+- 官方文档目前说明使用情况在 AI Studio Dashboard 查看；2026 年文档已出现 Prepay/Postpay 与余额概念，因此 README 中“无公开余额/用量查询端点”的结论可以保留，但应避免写成永久能力判断。
+
+### P2：SiliconFlow 成功响应缺少/无法解析余额时仍记录成功空数据
+
+- 位置：`src-tauri/src/providers/siliconflow.rs:70-79`。
+- 当 `code == 0` 但 `data.balance` 缺失、为空或不是数字时，适配器返回成功的空 `ProviderUsage`，刷新层会写入一条零 Token、无余额的历史记录。这无法区分“该接口确实不提供余额”和“响应协议变化/解析失败”。
+- 对这个只提供余额的平台，余额应作为核心字段；缺失或非数字应显式报错，避免污染历史。当前 `tolerates_missing_balance` 测试反而固化了不可信行为。
+
+### P2：README 没有同步 V0.4 当前状态
+
+- 位置：`README.md:3,33,64,106` 附近。
+- 项目简介、V0.1 Provider 列表和目录说明仍只列 OpenAI/DeepSeek/Codex；路线图仍把 V0.4 写成未来事项，且没有说明 Gemini 是不可用占位项。
+- 应新增 V0.4 功能章节，准确区分“已实现”“实验性”“不可支持”，并写明 Claude 需要 Admin Key、OpenRouter 指标是费用、SiliconFlow 端点缺少官方稳定性保证。
+
+### P2：Provider 列表顺序不稳定
+
+- 位置：`src-tauri/src/providers/mod.rs:138-140`。
+- `supported_types()` 直接遍历 `HashMap` keys，设置页下拉顺序会在不同进程间变化。新增到 7 种平台后，这个问题更明显。
+- 应使用稳定注册表或在返回前排序，并用产品期望顺序而非随机顺序展示。
+
+## V0.4 任务状态
+
+| 能力 | 状态 | 审查结论 |
+| --- | --- | --- |
+| OpenRouter | 不可验收 | 默认 URL 404 风险；费用误记为 Token。 |
+| SiliconFlow | 基本实现 | 余额查询路径已写，但依赖非正式/未稳定文档端点，核心字段缺失会静默成功。 |
+| Claude | 基本实现 | 官方 Admin Usage/Cost API、认证和 cents→USD 方向正确；分页截断与时间 bucket 口径需修复。 |
+| Gemini | 未实现 | 当前只是必然返回错误的占位适配器，不应作为可添加 Provider。 |
+| 前端接入 | 部分完成 | 类型和提示已加入，但 OpenRouter preset 错误、Gemini 表单会无意义收集 Key。 |
+| 文档 | 未完成 | README 尚未反映 V0.4 实际能力与限制。 |
+| 自动化验证 | 部分完成 | 37 个 Rust 单测通过、前端构建通过；缺少 HTTP mock、URL 契约和分页行为测试。 |
+
+## 建议修复顺序
+
+1. 修复 OpenRouter URL 和费用/Token 字段映射，并补 URL/mock 测试。
+2. 修复 Claude 分页截断与按 bucket 日期计算今日/近 30 天指标。
+3. 在无可用查询方案前从可添加列表移除 Gemini，避免无意义保存 API Key。
+4. 将 SiliconFlow 缺失/非法余额改为显式失败。
+5. 稳定 Provider 下拉顺序并更新 README。
