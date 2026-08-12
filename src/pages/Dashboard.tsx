@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import ProviderCard from "../components/ProviderCard";
+import { DEFAULT_WIDGETS, parseWidgets } from "../utils/layout";
 import type {
+  DashboardWidget,
   ProviderConfig,
   ProviderUsage,
   RefreshSettings,
@@ -11,8 +13,9 @@ import type {
 /** 刷新最小间隔（毫秒），与后端前台最小 10 秒约束一致（P2 修复） */
 const MIN_INTERVAL_MS = 10_000;
 
-/** 总览页：Provider 卡片列表 + 手动刷新 + 前台/后台轮询（单飞） */
-export default function Dashboard() {
+/** 总览页：Widget 容器（V0.3 DIY UI）+ 刷新调度 */
+export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
+  const [widgets, setWidgets] = useState<DashboardWidget[]>(DEFAULT_WIDGETS);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [usages, setUsages] = useState<Record<number, ProviderUsage>>({});
   const [refreshingIds, setRefreshingIds] = useState<Set<number>>(new Set());
@@ -114,14 +117,29 @@ export default function Dashboard() {
     [],
   );
 
-  // 首次加载：读取 Provider 列表与刷新策略
+  // 首次加载：布局 + Provider 列表 + 刷新策略
   useEffect(() => {
+    void api
+      .getLayout()
+      .then((json) => setWidgets(parseWidgets(json)))
+      .catch(() => {});
     void loadProviders();
     void api
       .getRefreshSettings()
       .then(setRefreshSettings)
       .catch((e) => setError(String(e)));
   }, [loadProviders]);
+
+  // 布局持久化（V0.3）：widgets 或 theme 变化后防抖保存到后端（含主题）
+  const saveTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      const json = JSON.stringify({ theme, widgets });
+      void api.setLayout(json).catch(() => {});
+    }, 500);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [widgets, theme]);
 
   // Provider 列表变化后自动刷新一次
   useEffect(() => {
@@ -173,20 +191,124 @@ export default function Dashboard() {
     };
   }, [refreshSettings.foregroundSecs, refreshSettings.backgroundSecs, runRefresh]);
 
-  if (providers.length === 0 && !error) {
+  const visibleWidgets = widgets.filter((w) => w.visible);
+
+  // ---- V0.3 编辑模式：拖拽排序 + 显示/隐藏 ----
+  const [editing, setEditing] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+
+  const toggleVisible = (id: string) => {
+    setWidgets((ws) =>
+      ws.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)),
+    );
+  };
+
+  const moveWidget = (from: number, to: number) => {
+    setWidgets((ws) => {
+      const next = [...ws];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  const onDropAt = (index: number) => (e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragIndex !== null && dragIndex !== index) moveWidget(dragIndex, index);
+    setDragIndex(null);
+  };
+
+  const renderWidget = (w: DashboardWidget, index: number) => {
+    const body =
+      w.type === "summary" ? (
+        <SummaryWidget providers={providers} usages={usages} />
+      ) : w.type === "cost" ? (
+        <CostWidget usages={usages} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {providers.length === 0 ? (
+            <div className="animate-fade-in-up glass mt-8 p-8 text-center">
+              <p className="text-[15px] font-medium text-text-primary">
+                尚未添加 Provider
+              </p>
+              <p className="mt-2 text-[13px] text-text-secondary">
+                前往「设置」添加 DeepSeek / OpenAI 等 API 账户，
+                <br />
+                即可在此查看余额与 Token 消耗
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] text-text-muted">
+                  {providers.length} 个账户
+                </span>
+                <button
+                  className="btn btn-ghost px-3 py-1 text-[12px]"
+                  onClick={() => void runRefresh()}
+                  disabled={refreshingIds.size > 0}
+                >
+                  {refreshingIds.size > 0 ? "刷新中…" : "立即刷新"}
+                </button>
+              </div>
+              {providers.map((p) => (
+                <ProviderCard
+                  key={p.id}
+                  provider={p}
+                  usage={usages[p.id]}
+                  error={errors[p.id]}
+                  refreshing={refreshingIds.has(p.id)}
+                  onRefresh={() => void refreshOne(p.id)}
+                />
+              ))}
+            </>
+          )}
+        </div>
+      );
+
+    if (!editing) return <div key={w.id}>{body}</div>;
+
     return (
-      <div className="animate-fade-in-up glass mt-8 p-8 text-center">
-        <p className="text-[15px] font-medium text-text-primary">
-          尚未添加 Provider
-        </p>
-        <p className="mt-2 text-[13px] text-text-secondary">
-          前往「设置」添加 DeepSeek / OpenAI 等 API 账户，
-          <br />
-          即可在此查看余额与 Token 消耗
-        </p>
+      <div
+        key={w.id}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "move";
+          setDragIndex(index);
+        }}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDropAt(index)}
+        className={`relative rounded-2xl border transition-opacity ${
+          w.visible
+            ? "border-dashed border-border bg-card/60"
+            : "border-dashed border-border opacity-50"
+        }`}
+      >
+        {/* 编辑工具栏 */}
+        <div className="flex items-center justify-between px-3 pt-2">
+          <div className="flex items-center gap-2">
+            <span className="cursor-grab text-text-muted" title="拖动排序">
+              ⠿
+            </span>
+            <span className="text-[12px] font-medium text-text-secondary">
+              {w.type === "providers"
+                ? "账户列表"
+                : w.type === "summary"
+                  ? "今日汇总"
+                  : "费用概览"}
+            </span>
+          </div>
+          <button
+            className="text-[11px] text-text-secondary underline-offset-2 hover:text-text-primary hover:underline"
+            onClick={() => toggleVisible(w.id)}
+          >
+            {w.visible ? "隐藏" : "显示"}
+          </button>
+        </div>
+        <div className="px-3 pb-3 pt-1">{body}</div>
       </div>
     );
-  }
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -196,29 +318,78 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <span className="text-[12px] text-text-muted">
-          {providers.length} 个账户
-        </span>
+      {/* 编辑模式入口（V0.3） */}
+      <div className="flex items-center justify-end">
         <button
-          className="btn btn-ghost px-3 py-1 text-[12px]"
-          onClick={() => void runRefresh()}
-          disabled={refreshingIds.size > 0}
+          className={`btn px-3 py-1 text-[12px] ${
+            editing ? "btn-primary" : "btn-ghost"
+          }`}
+          onClick={() => setEditing((e) => !e)}
         >
-          {refreshingIds.size > 0 ? "刷新中…" : "立即刷新"}
+          {editing ? "完成编辑" : "编辑布局"}
         </button>
       </div>
 
-      {providers.map((p) => (
-        <ProviderCard
-          key={p.id}
-          provider={p}
-          usage={usages[p.id]}
-          error={errors[p.id]}
-          refreshing={refreshingIds.has(p.id)}
-          onRefresh={() => void refreshOne(p.id)}
-        />
-      ))}
+      {editing
+        ? widgets.map((w, i) => renderWidget(w, i))
+        : visibleWidgets.map((w, i) => renderWidget(w, i))}
+    </div>
+  );
+}
+
+/** 汇总 Widget：账户数 + 今日消耗合计 + Token 合计 */
+function SummaryWidget({
+  providers,
+  usages,
+}: {
+  providers: ProviderConfig[];
+  usages: Record<number, ProviderUsage>;
+}) {
+  const list = Object.values(usages);
+  const todayCost = list.reduce(
+    (sum, u) => sum + (u.todayCost ?? 0),
+    0,
+  );
+  const totalTokens = list.reduce((sum, u) => sum + u.totalTokens, 0);
+  return (
+    <section className="glass p-4">
+      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+        今日汇总
+      </h3>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        <SummaryStat label="账户" value={String(providers.length)} />
+        <SummaryStat label="今日消耗" value={todayCost.toFixed(2)} />
+        <SummaryStat label="Token" value={totalTokens.toLocaleString("zh-CN")} />
+      </div>
+    </section>
+  );
+}
+
+/** 费用/余额 Widget：总余额 + 近 30 天费用 */
+function CostWidget({ usages }: { usages: Record<number, ProviderUsage> }) {
+  const list = Object.values(usages);
+  const balance = list.reduce((sum, u) => sum + (u.balance ?? 0), 0);
+  const monthCost = list.reduce((sum, u) => sum + (u.monthCost ?? 0), 0);
+  return (
+    <section className="glass p-4">
+      <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
+        费用概览
+      </h3>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+        <SummaryStat label="账户总余额" value={balance.toFixed(2)} />
+        <SummaryStat label="近 30 天费用" value={monthCost.toFixed(2)} />
+      </div>
+    </section>
+  );
+}
+
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white/[0.03] px-2 py-2">
+      <div className="truncate text-[14px] font-semibold text-text-primary">
+        {value}
+      </div>
+      <div className="mt-0.5 text-[10px] text-text-muted">{label}</div>
     </div>
   );
 }

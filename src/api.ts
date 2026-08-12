@@ -48,4 +48,8 @@ export const api = {
     invoke<WindowState>("set_always_on_top", { enabled }),
   getWindowState: () => invoke<WindowState>("get_window_state"),
   getMigrationStatus: () => invoke<number | null>("get_migration_status"),
+
+  // ---- V0.3 DIY UI ----
+  getLayout: () => invoke<string | null>("get_layout"),
+  setLayout: (layout: string) => invoke<void>("set_layout", { layout }),
 };

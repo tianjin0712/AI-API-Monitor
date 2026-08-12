@@ -8,16 +8,36 @@ import Settings from "./pages/Settings";
 import type { WindowMode, WindowState } from "./types";
 
 type Page = "dashboard" | "settings";
+export type Theme = "dark" | "light";
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [mode, setMode] = useState<WindowMode>("full");
+  const [theme, setTheme] = useState<Theme>("dark");
 
-  // 读取窗口状态（模式 + 置顶）
+  // 应用主题到 <html data-theme>（V0.3；持久化随布局 JSON 在 set_layout 完成）
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  // 读取窗口状态（模式 + 置顶）与已保存主题（V0.3 布局 JSON）
   useEffect(() => {
     void api
       .getWindowState()
       .then((s) => setMode(s.mode))
+      .catch(() => {});
+    void api
+      .getLayout()
+      .then((json) => {
+        if (json) {
+          try {
+            const t = (JSON.parse(json) as { theme?: string }).theme;
+            if (t === "light" || t === "dark") setTheme(t);
+          } catch {
+            /* 无效布局忽略 */
+          }
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -65,7 +85,11 @@ export default function App() {
           "radial-gradient(120% 90% at 50% 0%, rgba(108,140,255,0.10), transparent 60%), var(--color-surface)",
       }}
     >
-      <TitleBar onSwitchMode={(m) => void switchMode(m)} />
+      <TitleBar
+        onSwitchMode={(m) => void switchMode(m)}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+      />
 
       {/* 页面切换 */}
       <nav className="mx-4 flex shrink-0 gap-1 rounded-xl border border-border/60 bg-white/[0.03] p-1">
@@ -90,7 +114,7 @@ export default function App() {
       </nav>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
-        {page === "dashboard" ? <Dashboard /> : <Settings />}
+        {page === "dashboard" ? <Dashboard theme={theme} /> : <Settings />}
       </main>
     </div>
   );

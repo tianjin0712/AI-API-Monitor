@@ -139,6 +139,33 @@ pub fn get_migration_status(db: State<'_, Db>) -> Option<u64> {
         .and_then(|s| s.parse().ok())
 }
 
+/// 读取 DIY 布局 JSON（V0.3；未设置时返回 None）。
+#[tauri::command]
+pub fn get_layout(db: State<'_, Db>) -> Result<Option<String>, AppError> {
+    settings::get_setting(&db, settings::SETTING_LAYOUT)
+}
+
+/// 布局 JSON 校验（纯函数，供命令与测试复用，V0.3）。
+pub fn validate_layout_json(layout: &str) -> Result<(), String> {
+    let value: serde_json::Value =
+        serde_json::from_str(layout).map_err(|e| format!("布局 JSON 无效: {e}"))?;
+    let theme = value.get("theme").and_then(|t| t.as_str()).unwrap_or("dark");
+    if theme != "dark" && theme != "light" {
+        return Err("theme 仅支持 dark / light".into());
+    }
+    if !value.get("widgets").is_some_and(|w| w.is_array()) {
+        return Err("widgets 必须为数组".into());
+    }
+    Ok(())
+}
+
+/// 保存 DIY 布局 JSON（V0.3）。后端做最小结构校验（可解析、theme 合法、widgets 为数组）。
+#[tauri::command]
+pub fn set_layout(db: State<'_, Db>, layout: String) -> Result<(), AppError> {
+    validate_layout_json(&layout).map_err(AppError::Invalid)?;
+    settings::set_setting(&db, settings::SETTING_LAYOUT, &layout)
+}
+
 /// 刷新间隔合法性校验（纯函数，供命令与测试复用）。
 pub fn validate_refresh_intervals(foreground_secs: u64, background_secs: u64) -> Result<(), String> {
     const MIN_FOREGROUND: u64 = 10;
@@ -257,6 +284,21 @@ mod tests {
     fn rejects_background_smaller_than_foreground() {
         assert!(validate_refresh_intervals(60, 30).is_err());
         assert!(validate_refresh_intervals(300, 60).is_err());
+    }
+
+    #[test]
+    fn layout_validation_accepts_valid_json() {
+        let ok = r#"{"theme":"dark","widgets":[{"id":"w1","type":"providers","visible":true}]}"#;
+        assert!(super::validate_layout_json(ok).is_ok());
+        let ok_light = r#"{"theme":"light","widgets":[]}"#;
+        assert!(super::validate_layout_json(ok_light).is_ok());
+    }
+
+    #[test]
+    fn layout_validation_rejects_bad_input() {
+        assert!(super::validate_layout_json("not json").is_err());
+        assert!(super::validate_layout_json(r#"{"theme":"blue","widgets":[]}"#).is_err());
+        assert!(super::validate_layout_json(r#"{"theme":"dark","widgets":{}}"#).is_err());
     }
 }
 

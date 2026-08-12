@@ -61,3 +61,21 @@ export interface DeleteResult {
   credentialCleaned: boolean;
   note: string | null;
 }
+
+// ---- V0.3 DIY UI ----
+
+/** Widget 类型（Dashboard 区块） */
+export type WidgetType = "providers" | "summary" | "cost";
+
+/** Dashboard 上的一个 Widget */
+export interface DashboardWidget {
+  id: string;
+  type: WidgetType;
+  visible: boolean;
+}
+
+/** DIY 布局（JSON 持久化，含主题） */
+export interface Layout {
+  theme: "dark" | "light";
+  widgets: DashboardWidget[];
+}

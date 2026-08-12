@@ -72,6 +72,8 @@ pub fn run() {
             commands::set_always_on_top,
             commands::get_window_state,
             commands::get_migration_status,
+            commands::get_layout,
+            commands::set_layout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

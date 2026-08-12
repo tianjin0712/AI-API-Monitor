@@ -15,6 +15,23 @@
   --color-text-muted: #6b7280;
 }
 
+/* ---- 亮色主题（V0.3）：html[data-theme="light"] 覆盖 --color-* ---- */
+html[data-theme="light"] {
+  --color-surface: #f2f4f8;
+  --color-card: #ffffff;
+  --color-card-hover: #f6f8fb;
+  --color-border: #dde2ea;
+  --color-accent: #4c6ef5;
+  --color-accent-dim: #3b5bdb;
+  --color-success: #12b886;
+  --color-warning: #f59f00;
+  --color-danger: #fa5252;
+  --color-text-primary: #1c2333;
+  --color-text-secondary: #5b6472;
+  --color-text-muted: #98a1b0;
+  transition: background-color 0.25s ease;
+}
+
 html,
 body,
 #root {
@@ -53,6 +70,16 @@ body {
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
+}
+
+html[data-theme="light"] .glass {
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.92),
+    rgba(240, 243, 248, 0.85)
+  );
+  border-color: rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 12px rgba(20, 30, 60, 0.06);
 }
 
 /* ---- 动画 ---- */

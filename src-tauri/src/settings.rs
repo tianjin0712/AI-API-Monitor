@@ -11,8 +11,10 @@ use rusqlite::OptionalExtension;
 
 /// settings 表键名：前台刷新间隔（秒）
 pub const SETTING_REFRESH_FOREGROUND_SECS: &str = "refresh.foregroundSecs";
-/// settings 表键名：后台刷新间隔（秒）
+/// settings 键名：后台刷新间隔（秒）
 pub const SETTING_REFRESH_BACKGROUND_SECS: &str = "refresh.backgroundSecs";
+/// settings 键名：DIY 布局 JSON（V0.3，含 theme 与 widgets）
+pub const SETTING_LAYOUT: &str = "ui.layout";
 
 /// 应用层错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
