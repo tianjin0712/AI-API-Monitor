@@ -68,6 +68,27 @@ pub struct ProviderConfig {
     pub updated_time: String,
 }
 
+/// 凭据来源（P1：显式区分，避免用伪 key_ref 表示无凭据）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialSource {
+    /// 密钥存于系统凭据库（keyring），key_ref 为其引用。
+    Keyring,
+    /// 复用 Codex CLI 本地登录态（~/.codex/auth.json），key_ref 为空。
+    CodexCli,
+}
+
+impl ProviderConfig {
+    /// 凭据来源（按类型推导，Codex 为唯一 CLI 凭证类型）。
+    pub fn credential_source(&self) -> CredentialSource {
+        if self.provider_type == "codex" {
+            CredentialSource::CodexCli
+        } else {
+            CredentialSource::Keyring
+        }
+    }
+}
+
 /// Provider 查询过程中的错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {

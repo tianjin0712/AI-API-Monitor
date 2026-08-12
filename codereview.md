@@ -109,3 +109,198 @@
 3. 增加 V3 数据迁移，安全处理旧 `key_ref`；为 keyring 删除失败提供可见的恢复路径。
 4. 安装 Rust 工具链并执行 `cargo check`、`cargo test`、`pnpm tauri dev`，手测三种模式、托盘、关闭到托盘和重启恢复。
 5. 补充窗口状态保存、系统唤醒刷新与 Provider 真实接口集成测试。
+
+# 代码复审：V0.3（2026-08-12 20:12:18 +08:00）
+
+审查基线：提交 `a330eca`（V0.3 DIY UI），并包含截至 `b40b352` 的后续修复与 Codex Provider 变更。
+
+范围：V0.3 Widget 布局、拖拽编辑、布局持久化、主题系统及其与现有 Provider 数据的组合行为。
+
+## 结论
+
+V0.3 已完成可运行的基础原型：Dashboard 被拆成账户列表、今日汇总、费用概览三个 Widget；支持拖拽排序、显示/隐藏、暗亮主题以及 SQLite 中的 JSON 持久化。`pnpm build` 通过。
+
+当前仍不建议将 V0.3 标记为完整完成。布局加载与自动保存存在覆盖用户配置的竞态，主题在设置页切换时不会持久化，汇总组件还会把人民币、美元以及 Codex 额度等不同单位直接相加，展示结果不具备业务意义。按照 `mission.md` 的完整 DIY UI 要求，缩放、删除/恢复、透明度、圆角、字体和颜色编辑也尚未实现。
+
+Rust/Cargo 仍不在当前环境的 PATH 中，因此本轮无法运行 `cargo check` 和新增的 Rust 单元测试，也没有执行真实 Tauri 桌面端的拖拽与重启恢复测试。
+
+## V0.3 任务完成情况
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| Widget 化 | 基本完成 | 已有 `providers`、`summary`、`cost` 三种固定 Widget。 |
+| Widget 拖拽排序 | 基本完成 | 使用原生 HTML Drag and Drop 实现纵向排序；尚无键盘/触屏方案。 |
+| Widget 显示/隐藏 | 已实现 | 编辑模式下可切换，自动保存。 |
+| Widget 删除与恢复 | 未实现 | 当前只有隐藏，没有删除、添加或恢复默认布局入口。 |
+| Widget 缩放 | 未实现 | 数据模型没有尺寸、网格位置或最小/最大尺寸。 |
+| 布局 JSON 保存 | 部分完成 | 后端保存与最小校验已实现，但初始化存在覆盖竞态，保存失败无反馈。 |
+| 暗色/亮色主题 | 部分完成 | 两套 CSS 变量和切换按钮已实现；持久化依赖 Dashboard 挂载。 |
+| 透明度、圆角、字体、颜色 | 未实现 | `Layout` 与 Widget 模型均无这些配置字段。 |
+| 自动化验证 | 部分完成 | 有后端 JSON 最小校验测试；无前端解析、拖拽、持久化或主题测试。 |
+
+## 本轮发现的问题
+
+### P1：初次加载时默认布局可能覆盖用户已保存的布局
+
+- 位置：`src/pages/Dashboard.tsx:120-142`。
+- Dashboard 初始状态立即使用 `DEFAULT_WIDGETS`，同时异步调用 `getLayout()`。保存 effect 在首次渲染后马上启动 500ms 定时器；如果读取 SQLite、Tauri IPC 或 WebView 初始化超过 500ms，默认布局就会先写回数据库，覆盖用户原布局。
+- 即使读取通常很快，这仍属于数据破坏型竞态，慢机器、首次启动或数据库繁忙时可复现。
+- 修复：增加 `layoutLoaded` 状态，只有布局读取完成后才允许自动保存；读取失败时向用户展示错误，不应直接启用默认布局覆盖。更稳妥的做法是把布局和主题作为 App 级单一状态，一次读取、一次写入。
+
+### P1：在“设置”页切换主题不会保存，重启后主题丢失
+
+- 位置：`src/App.tsx:14-21,88-117`，`src/pages/Dashboard.tsx:133-142`。
+- 主题按钮位于全局标题栏，但保存主题的 effect 位于 Dashboard。用户切换到设置页后 Dashboard 会卸载，此时切换主题只修改 App 内存状态，没有任何 `setLayout` 调用；退出或重启后恢复旧主题。
+- 修复：将完整 `Layout` 状态和持久化提升到 `App` 或独立 context/store，Dashboard 只修改 widgets，标题栏只修改 theme，二者通过同一个保存入口写入。
+
+### P1：汇总 Widget 将不同币种和不同含义的数值直接相加
+
+- 位置：`src/pages/Dashboard.tsx:340-381`。
+- `SummaryWidget` 直接累加所有 Provider 的 `todayCost`，`CostWidget` 直接累加所有 `balance` 和 `monthCost`，但没有按 `currency` 分组或换算。DeepSeek 可能是 CNY、OpenAI 是 USD，Codex 的 balance/remaining 又可能代表订阅额度或百分比。
+- 后果：例如 ¥100 + $20 会显示为无单位的 `120.00`；该数字既不是人民币也不是美元，会误导用户判断余额和支出。
+- 修复：按币种分别汇总并显示币种标签；Codex 订阅额度应使用独立指标，不参与货币余额求和。除非有明确汇率来源与时间戳，否则不要自动跨币种合计。
+
+### P1：V0.3 与方案中的完整 DIY UI 范围差距较大
+
+- 位置：`src/types.ts:67-80`、`src/pages/Dashboard.tsx:196-335`。
+- 当前 Widget 数据只有 `id/type/visible`，只能排序和隐藏。`mission.md` 要求的缩放、删除、透明度、圆角、字体和颜色均没有数据模型和交互实现；布局也是单列顺序，不是可自由定位的桌面 Widget 布局。
+- 修复：先明确 V0.3 验收口径。如果按 mission 验收，应扩展 Widget schema（位置、尺寸、样式、版本号），采用网格布局/拖拽缩放方案，并提供添加、删除、恢复默认和撤销。若本阶段只计划基础版，应在 README 和版本说明中明确写成 “V0.3-alpha：排序/隐藏/双主题”。
+
+### P2：布局保存失败被完全吞掉，用户会误以为已经保存
+
+- 位置：`src/pages/Dashboard.tsx:137-140`。
+- `api.setLayout(json).catch(() => {})` 忽略数据库或校验错误，界面没有保存中、已保存或失败状态。
+- 后果：用户调整布局后关闭应用，重启才发现设置丢失。
+- 修复：显示轻量保存状态；失败时保留未保存标记并允许重试。切换页面或退出编辑模式时应等待/刷新最后一次防抖保存。
+
+### P2：后端布局校验不足，重复 ID、未知类型和超大内容均可入库
+
+- 位置：`src-tauri/src/commands.rs:148-166`。
+- 后端只检查 theme 和 widgets 是否为数组，没有验证每项的 `id/type/visible`、ID 唯一性、允许的 Widget 类型、数组长度或 JSON 总大小。前端虽然会过滤部分无效项，但重复 ID 会造成 React key 冲突，缺失项会被静默丢弃。
+- 修复：用与前端一致的 Rust 结构体反序列化，拒绝未知字段/类型和重复 ID；限制 Widget 数量与 JSON 字节数，并加入 schema version 以支持后续迁移。
+
+### P2：旧布局不会自动补入未来新增的 Widget
+
+- 位置：`src/utils/layout.ts:13-30`。
+- `parseWidgets` 只返回保存 JSON 中通过过滤的项目。以后新增 Widget 类型时，已有用户的布局不会出现新 Widget，也没有“添加 Widget”或“恢复默认布局”入口。
+- 修复：解析后按稳定类型/ID与默认清单合并：保留用户顺序和可见性，再把新增默认 Widget 追加为可见或待添加状态；同时提供恢复默认按钮。
+
+### P2：拖拽区域是整个 Widget，内部按钮操作可能与拖拽冲突
+
+- 位置：`src/pages/Dashboard.tsx:271-308`。
+- 编辑模式把最外层容器设为 `draggable`，尽管视觉上只有 `⠿` 表示拖动把手。用户操作内部的刷新或显示按钮时，鼠标移动可能触发整个卡片拖拽。
+- 修复：仅让专用拖动把手启动拖拽，或使用支持 handle、键盘和触屏的拖拽库；拖动时增加目标位置反馈和取消处理。
+
+### P3：主题存在启动闪烁和部分硬编码颜色不适配亮色模式
+
+- 位置：`src/App.tsx:16-41`、`src/index.css`、多个组件中的 `bg-white/*` 与固定深色文本。
+- 应用初始固定为 dark，异步读取布局后才切换 light，会出现暗色首帧闪烁。部分交互色使用固定 `white` 或 `#0b0e14`，亮色模式下对比度与语义不统一。
+- 修复：在渲染主 UI 前完成主题加载，或在最早的启动脚本读取缓存主题；逐步把固定颜色替换为语义 CSS 变量，并做亮/暗主题视觉回归。
+
+## 本轮验证
+
+- `pnpm build`：通过，TypeScript 与 Vite 生产构建成功。
+- `cargo check` / `cargo test`：未执行，当前环境找不到 `cargo`。
+- `git diff --check`：未发现本轮前已有代码的空白格式错误。
+- 未执行：真实桌面拖拽、关闭后重启恢复、设置页主题持久化、慢 IPC 初始化竞态以及触屏/键盘可访问性测试。
+
+## 建议修复顺序
+
+1. 把 Layout 状态提升到 App 层，并用 `layoutLoaded` 阻止初始化覆盖；保存失败必须可见。
+2. 按币种/指标类型拆分汇总，禁止直接相加 CNY、USD 和 Codex 订阅额度。
+3. 明确 V0.3 是基础版还是完整 mission 验收；补齐相应的缩放、删除/添加和样式编辑能力。
+4. 强化布局 schema 校验、版本化和默认 Widget 合并策略。
+5. 安装 Rust 工具链并执行后端测试，再在 Tauri 中手测拖拽、主题和重启恢复。
+
+# 代码复审：整体状态与 Codex Provider（2026-08-12 20:19:06 +08:00）
+
+审查基线：提交 `269086f`；工作区除本审查文档外没有代码改动。
+
+范围：复核上一轮 V0.3 问题是否已有修复，并专项检查新增的 Codex Provider、凭据边界、刷新行为和文档声明。
+
+## 结论
+
+自上一轮审查后没有代码修复提交，因此 V0.3 中已记录的初始化覆盖、主题持久化、跨币种错误汇总和 DIY UI 缺项仍全部存在。本轮新增发现一个发布阻断级安全问题：Codex Provider 会从本机 `~/.codex/auth.json` 读取 ChatGPT/Codex access token，却允许将 Base URL 修改为任意 HTTPS 地址，随后把该令牌作为 Bearer token 发往该地址。
+
+Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chatgpt.com/backend-api/codex/wham/rate-limit-reset-credits` 内部端点和响应模型。它可以作为明确标注的实验性功能，但不应在没有兼容性探测、令牌刷新与真实端到端验证的情况下声明为稳定支持。
+
+`pnpm build` 再次通过。当前环境依旧找不到 `cargo`，无法验证 Rust 编译、单元测试与真实 Tauri 行为。
+
+## 本轮发现的问题
+
+### P0：Codex access token 可被发送到任意 HTTPS 主机
+
+- 位置：`src-tauri/src/settings.rs:38-64,143-165`，`src-tauri/src/providers/codex.rs:72-90`，`src/pages/Settings.tsx` 的 Base URL 输入框。
+- Provider 通用校验只要求 URL 使用 HTTPS；Codex 表单仍允许编辑 Base URL。刷新时程序无条件读取本机 Codex CLI access token，并对配置 URL 执行 `.bearer_auth(access_token)`。
+- 攻击/误操作路径：只要 Codex Provider 的 URL 被设置为恶意 HTTPS 域名，下一次自动刷新就会把用户的 ChatGPT/Codex access token 发送给该域名。该修改可来自用户误填、数据库篡改或未来 UI/XSS 链路。
+- 修复：Codex Provider 必须忽略数据库中的自由 URL并使用代码内固定 origin，或严格校验 scheme、host、port 和 path 均完全匹配允许列表。应禁用 Codex 的 Base URL 编辑框。HTTP 重定向也必须关闭或逐跳验证目标 origin，防止官方/受控地址通过 30x 把 Authorization 转发到非预期主机。
+- 回归测试：加入恶意 host、子域伪装（如 `chatgpt.com.evil.test`）、userinfo、非默认端口、路径混淆和跨域重定向测试，并断言请求前即被拒绝。
+
+### P1：Codex Provider 依赖未公开保证的内部端点，README 将其描述成已完成能力
+
+- 位置：`src-tauri/src/providers/codex.rs:1-12,20-27`，`README.md` 的 V0.1 功能列表。
+- 当前实现依据本地 `codex-cli 0.146.0` 的内部协议构造 `wham/rate-limit-reset-credits` 请求。官方 OpenAI Codex 文档没有公开承诺该端点、响应字段或第三方复用 CLI token 的稳定兼容性。[官方 Codex 文档](https://developers.openai.com/codex/)
+- 后果：CLI 升级、服务端字段调整或权限策略变化即可让 Provider 失效；伪造的 fixture 单测只能证明代码能解析自定义样例，不能证明真实服务返回该结构。
+- 修复：将功能标记为“实验性/依赖 Codex CLI 0.146.0 内部接口”，加入协议版本/字段探测和清晰降级提示；优先调用官方公开能力或直接复用 CLI 提供的稳定命令输出（若官方明确支持）。发布前以真实账户完成端到端测试，但不得记录或输出 token。
+
+### P1：只读取 access token，没有刷新过期令牌的能力
+
+- 位置：`src-tauri/src/providers/codex.rs:138-155`。
+- `auth.json` 同时包含 access/refresh token 与更新时间信息，但实现只读取 access token。access token 过期时会持续返回 401，除非 Codex CLI 或其他进程恰好刷新并改写文件。
+- 后果：应用启动时可能正常，运行一段时间后稳定失败，自动刷新无法自行恢复；README 的“复用 CLI 登录态”容易让用户误以为应用完整复用了 CLI 认证生命周期。
+- 修复：不要自行实现未经官方支持的 OAuth 刷新协议。优先通过受支持的 Codex CLI/SDK交互获取当前状态；若只能读文件，应明确检测 401/过期并提示用户运行 Codex CLI 重新登录或刷新，同时避免每 10 秒重复发送必然失败的请求。
+
+### P1：空或变化后的 Codex 响应会被当作成功并写入零值历史
+
+- 位置：`src-tauri/src/providers/codex.rs:23-27,100-134`，`src-tauri/src/commands.rs:92-101,310-330`。
+- `rate_limit_reset_credits` 被声明为可选；字段缺失时函数仍返回 `Ok(ProviderUsage::empty(...))` 并设置更新时间。批量刷新随后把它标记为成功并将 token/cost/balance 零值写入历史。
+- 后果：协议变化、账号不具备额度字段或服务端返回不完整响应时，UI 显示“刷新成功但无额度”，历史数据也被污染，无法区分真实零值与解析失败。
+- 修复：缺少核心对象或既无额度又无重置/百分比时返回结构化 `UnsupportedResponse` 错误；只有验证过的有效响应才能更新历史和成功时间。
+
+### P2：删除 Codex Provider 会错误清理 `cli_local` keyring 项并报告虚假风险
+
+- 位置：`src-tauri/src/settings.rs:105-111,220-265`。
+- Codex 不向 keyring 写入密钥，却把 `com.aiapimonitor.desktop:cli_local` 存为 `key_ref`。删除时通用逻辑仍调用 `SecureStorage::delete_api_key`。通常该凭据不存在，于是返回 `credentialCleaned: false`，前端提示可能残留敏感信息。
+- 更坏情况下，如果同一 service 下恰好存在名为 `cli_local` 的合法凭据，删除任意 Codex Provider 会误删该共享项；多个 Codex Provider 还共用同一占位引用。
+- 修复：数据模型应显式区分 `CredentialSource::Keyring` 与 `CredentialSource::CodexCli`，不要用伪 key_ref 表示无凭据。删除/回滚仅对真正创建过的 keyring 引用执行清理。
+
+### P2：Codex 额度被标记为人民币余额，语义错误
+
+- 位置：`src-tauri/src/providers/codex.rs:107-130`。
+- 代码固定 `usage.currency = "¥"`，但 `credits.balance` 或 `spend_control.remaining_percent` 是订阅额度/百分比，并不等于人民币金额。它还会被 V0.3 `CostWidget` 纳入“账户总余额”。
+- 后果：用户会把订阅额度误认为货币余额，并与 CNY/USD 继续错误求和。
+- 修复：统一数据模型增加 metric kind/unit，例如 `currency_amount`、`percentage`、`credits`、`tokens`；Codex 使用 `credits` 或 `%`，绝不伪装为人民币。
+
+### P2：批量刷新串行执行，Provider 增多后可能长时间阻塞
+
+- 位置：`src-tauri/src/commands.rs:78-108`。
+- `refresh_all` 对 Provider 逐个 `await`。每个请求最长约 15–20 秒，多个失败账户会把总耗时累加；前端单飞期间所有刷新入口都不可用。
+- 修复：使用受控并发（例如 3–4 个任务）并保持逐账户结果；对同一 Provider/host 设置合理限流。不要无限并发，也不要让一个慢账户阻塞全部结果展示。
+
+## 上轮问题复核
+
+| 上轮 V0.3 问题 | 当前状态 |
+| --- | --- |
+| 默认布局可能覆盖保存布局 | 未修复 |
+| 设置页切换主题不持久化 | 未修复 |
+| 跨币种/跨指标直接汇总 | 未修复，并被 Codex 的 `¥` 额度进一步放大 |
+| 保存失败静默吞掉 | 未修复 |
+| 后端布局 schema 校验不足 | 未修复 |
+| 新 Widget 不会合并到旧布局 | 未修复 |
+| 仅排序/隐藏，缺少完整 DIY 能力 | 未修复 |
+
+## 本轮验证
+
+- `pnpm build`：通过。
+- 本机 Codex CLI：检测到 `codex-cli 0.146.0`；只核对了 `auth.json` 字段名称，没有读取或输出任何 token 内容。
+- 官方文档核对：未找到对当前内部 `wham` 端点与响应结构的公开稳定承诺，因此审查按实验性依赖处理。
+- `cargo check` / `cargo test`：未执行，当前环境找不到 `cargo`。
+- 未向任何远程端点发送本机 Codex access token。
+
+## 建议修复顺序
+
+1. 立即固定 Codex 请求 origin、关闭/验证重定向，并移除 Codex Base URL 编辑能力。
+2. 将凭据来源和指标单位建模为明确枚举，修复 Codex 删除与货币展示问题。
+3. 对缺失核心字段、401 和协议变化返回可行动错误；将该 Provider 标记为实验性。
+4. 修复上一轮全部 V0.3 持久化与汇总问题。
+5. 安装 Rust 工具链后运行全部测试，并为 Codex host allowlist、重定向和空响应添加回归测试。

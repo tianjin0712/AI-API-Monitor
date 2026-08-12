@@ -11,9 +11,6 @@ use keyring::Entry;
 /// keyring service 名（与 tauri.conf.json identifier 对齐）。
 const KEYRING_SERVICE: &str = "com.aiapimonitor.desktop";
 
-/// 公开给外部（settings.rs 拼 codex 占位 key_ref）用的 service 名。
-pub const KEYRING_SERVICE_PUB: &str = KEYRING_SERVICE;
-
 /// 安全存储错误。
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {

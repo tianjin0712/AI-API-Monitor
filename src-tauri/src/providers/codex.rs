@@ -73,14 +73,13 @@ impl ProviderAdapter for CodexProvider {
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(20))
+            // P0：禁用自动重定向，防止 30x 将 Authorization 转发到非预期主机
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| ProviderError::Http(e.to_string()))?;
 
-        let base = if config.api_url.trim().is_empty() {
-            DEFAULT_CODEX_BASE.to_string()
-        } else {
-            config.api_url.trim_end_matches('/').to_string()
-        };
+        // P0：忽略数据库中的 api_url，固定使用官方地址，防止 token 泄露到任意主机
+        let base = DEFAULT_CODEX_BASE.trim_end_matches('/');
         let url = format!("{base}/wham/rate-limit-reset-credits");
 
         let resp = client
@@ -93,6 +92,14 @@ impl ProviderAdapter for CodexProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
+            // 401/403：登录过期或凭证失效，给出可行动提示（避免静默失败）
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
+                return Err(ProviderError::Api(
+                    "Codex 登录已过期或凭证无效，请运行 `codex login` 重新登录 ChatGPT".into(),
+                ));
+            }
             let body = resp.text().await.unwrap_or_default();
             return Err(ProviderError::Api(format!("HTTP {status}: {body}")));
         }
@@ -105,7 +112,9 @@ impl ProviderAdapter for CodexProvider {
         let rlc = data.rate_limit_reset_credits;
 
         let mut usage = ProviderUsage::empty(config.provider_type.clone());
-        usage.currency = "¥".into(); // ChatGPT 订阅按当地货币；无精确币种时用通用符号
+        // P1：Codex 额度是订阅额度（credits/百分比），不是货币余额，绝不伪装为 ¥/$。
+        // 前端按 currency 分组汇总时，credits 独立展示、不参与货币求和。
+        usage.currency = "credits".into();
         if let Some(rlc) = &rlc {
             usage.reset_time = rlc
                 .spend_control
@@ -129,6 +138,16 @@ impl ProviderAdapter for CodexProvider {
                     (limit > 0.0).then(|| ((limit - used) / limit * 100.0).max(0.0))
                 });
             usage.provider = config.provider_type.clone();
+        }
+        // P1：核心数据缺失（协议变化/账号无额度字段）时显式报错，
+        // 避免把"零值"当成功写入历史，无法区分真实零值与解析失败。
+        let has_quota = usage.balance.is_some()
+            || usage.remaining.is_some()
+            || usage.reset_time.is_some();
+        if !has_quota {
+            return Err(ProviderError::Api(
+                "Codex 响应缺少额度/重置数据（可能接口协议变化或账号无额度字段）".into(),
+            ));
         }
         usage.updated_at = chrono::Utc::now().to_rfc3339();
         Ok(usage)

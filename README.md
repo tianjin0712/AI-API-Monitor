@@ -7,11 +7,13 @@
 
 ## ✨ 功能
 
-### V0.3 DIY UI
+### V0.3 DIY UI（V0.3-alpha：排序 / 隐藏 / 双主题）
 
 - ✅ 主题系统：亮/暗主题切换（标题栏按钮），持久化并启动恢复
 - ✅ Widget 布局：账户列表 / 今日汇总 / 费用概览 三区块自由组合
 - ✅ 编辑模式：Widget 拖拽排序 + 显示/隐藏（布局 JSON 持久化）
+
+> 注：缩放、透明度、圆角、字体/颜色等完整 DIY 能力属后续迭代（见路线图）。
 
 ### V0.2 桌面能力
 
@@ -25,6 +27,8 @@
 - ✅ 多 Provider 统一管理（DeepSeek、OpenAI、**Codex（ChatGPT 订阅额度）**；类型可扩展）
 - ✅ Codex：复用 Codex CLI 登录态（`~/.codex/auth.json`）查询订阅剩余额度与重置时间
   （经 `chatgpt.com/backend-api/codex/wham/rate-limit-reset-credits`，需网络可达 chatgpt.com）
+  - ⚠️ **实验性**：依赖 codex-cli 0.146.0 内部接口，OpenAI 未公开承诺该端点稳定性；
+    CLI 升级或服务端调整可能导致失效。Base URL 固定官方地址不可修改（防止本机凭证泄露）。
 - ✅ Dashboard 卡片：余额、Token 用量、今日消耗、更新时间、进度条、逐账户失败状态
 - ✅ Settings 页：添加 / 编辑 / 删除 API 账户
 - ✅ 刷新策略：前台 10s / 后台 60s / 手动刷新 / 窗口聚焦立即刷新（单飞防重叠）

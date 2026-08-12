@@ -8,6 +8,7 @@ mod window_mode;
 
 use crate::db::Db;
 use crate::providers::ProviderManager;
+use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WindowEvent};
@@ -26,7 +27,7 @@ pub fn run() {
             let db = Db::open(&data_dir.join("ai-api-monitor.db"))
                 .expect("failed to open database");
             app.manage(db);
-            app.manage(ProviderManager::new());
+            app.manage(Arc::new(ProviderManager::new()));
 
             // 启动时执行旧凭据迁移（幂等，V3）；失败数写入 settings 供前端提示
             match settings::migrate_legacy_credentials(app.state::<Db>().inner()) {

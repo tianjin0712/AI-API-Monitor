@@ -196,9 +196,17 @@ export default function Settings() {
           </label>
           <label className="col-span-2 text-[12px] text-text-secondary">
             Base URL
+            {NO_API_KEY_TYPES.has(form.providerType) ? (
+              <span className="mt-1 block rounded-lg border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[11px] text-text-primary">
+                {form.providerType === "codex"
+                  ? "Codex 使用固定官方地址（不可修改，防止本机凭证泄露）。"
+                  : "此类型使用固定地址"}
+              </span>
+            ) : null}
             <input
               className="input mt-1"
               value={form.apiUrl}
+              disabled={NO_API_KEY_TYPES.has(form.providerType)}
               placeholder="https://api.deepseek.com"
               onChange={(e) => setForm({ ...form, apiUrl: e.target.value })}
             />

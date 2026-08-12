@@ -47,6 +47,15 @@ pub fn validate_provider_input(
             "不支持的 Provider 类型: {provider_type}"
         )));
     }
+    // P0：Codex 复用本机 CLI 凭证，必须使用固定官方地址，禁止任意 host/端口/路径
+    if provider_type == "codex" {
+        if api_url.trim_end_matches('/') != crate::providers::codex::DEFAULT_CODEX_BASE {
+            return Err(AppError::Invalid(
+                "Codex 使用固定官方地址，不可修改（防止本机凭证泄露）".into(),
+            ));
+        }
+        return Ok(());
+    }
     let parsed = url::Url::parse(api_url).map_err(|_| AppError::Invalid("API URL 格式无效".into()))?;
     match parsed.scheme() {
         "https" => Ok(()),
@@ -102,9 +111,9 @@ pub fn add_provider(
         return Err(AppError::Invalid("API Key 不能为空".into()));
     }
     validate_provider_input(manager, provider_type, api_url)?;
-    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不写入 keyring
+    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不写入 keyring，key_ref 为空
     let key_ref = if api_key.is_empty() {
-        format!("{}:cli_local", crate::storage::KEYRING_SERVICE_PUB)
+        String::new()
     } else {
         let key_id = SecureStorage::gen_key_id();
         SecureStorage::save_api_key(&key_id, api_key)?
@@ -240,13 +249,14 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
         other => AppError::Db(other),
     })?;
 
-    match key_ref {
-        None => Ok(DeleteResult {
+    // P1：仅对真正写入过 keyring 的引用执行清理；空 key_ref（如 Codex CLI 凭证）直接成功
+    match key_ref.as_deref() {
+        None | Some("") => Ok(DeleteResult {
             provider_id: id,
             credential_cleaned: true,
             note: None,
         }),
-        Some(kr) => match SecureStorage::delete_api_key(&kr) {
+        Some(kr) => match SecureStorage::delete_api_key(kr) {
             Ok(()) => Ok(DeleteResult {
                 provider_id: id,
                 credential_cleaned: true,

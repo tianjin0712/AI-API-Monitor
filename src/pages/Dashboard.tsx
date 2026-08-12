@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import ProviderCard from "../components/ProviderCard";
-import { DEFAULT_WIDGETS, parseWidgets } from "../utils/layout";
+import { DEFAULT_WIDGETS } from "../utils/layout";
 import type {
   DashboardWidget,
   ProviderConfig,
@@ -13,9 +13,15 @@ import type {
 /** 刷新最小间隔（毫秒），与后端前台最小 10 秒约束一致（P2 修复） */
 const MIN_INTERVAL_MS = 10_000;
 
+interface Props {
+  /** 布局中的 Widget 列表（App 级状态，P1 提升） */
+  widgets: DashboardWidget[];
+  /** Widget 变更回调（App 统一持久化） */
+  onWidgetsChange: (updater: (ws: DashboardWidget[]) => DashboardWidget[]) => void;
+}
+
 /** 总览页：Widget 容器（V0.3 DIY UI）+ 刷新调度 */
-export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
-  const [widgets, setWidgets] = useState<DashboardWidget[]>(DEFAULT_WIDGETS);
+export default function Dashboard({ widgets, onWidgetsChange }: Props) {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [usages, setUsages] = useState<Record<number, ProviderUsage>>({});
   const [refreshingIds, setRefreshingIds] = useState<Set<number>>(new Set());
@@ -117,29 +123,14 @@ export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
     [],
   );
 
-  // 首次加载：布局 + Provider 列表 + 刷新策略
+  // 首次加载：Provider 列表 + 刷新策略（布局由 App 统一加载）
   useEffect(() => {
-    void api
-      .getLayout()
-      .then((json) => setWidgets(parseWidgets(json)))
-      .catch(() => {});
     void loadProviders();
     void api
       .getRefreshSettings()
       .then(setRefreshSettings)
       .catch((e) => setError(String(e)));
   }, [loadProviders]);
-
-  // 布局持久化（V0.3）：widgets 或 theme 变化后防抖保存到后端（含主题）
-  const saveTimer = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      const json = JSON.stringify({ theme, widgets });
-      void api.setLayout(json).catch(() => {});
-    }, 500);
-    return () => window.clearTimeout(saveTimer.current);
-  }, [widgets, theme]);
 
   // Provider 列表变化后自动刷新一次
   useEffect(() => {
@@ -198,13 +189,13 @@ export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const toggleVisible = (id: string) => {
-    setWidgets((ws) =>
+    onWidgetsChange((ws) =>
       ws.map((w) => (w.id === id ? { ...w, visible: !w.visible } : w)),
     );
   };
 
   const moveWidget = (from: number, to: number) => {
-    setWidgets((ws) => {
+    onWidgetsChange((ws) => {
       const next = [...ws];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -271,11 +262,6 @@ export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
     return (
       <div
         key={w.id}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = "move";
-          setDragIndex(index);
-        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDropAt(index)}
         className={`relative rounded-2xl border transition-opacity ${
@@ -284,10 +270,19 @@ export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
             : "border-dashed border-border opacity-50"
         }`}
       >
-        {/* 编辑工具栏 */}
+        {/* 编辑工具栏（P2：仅拖动把手可拖拽，避免整卡拖拽与按钮冲突） */}
         <div className="flex items-center justify-between px-3 pt-2">
           <div className="flex items-center gap-2">
-            <span className="cursor-grab text-text-muted" title="拖动排序">
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                setDragIndex(index);
+              }}
+              onDragEnd={() => setDragIndex(null)}
+              className="cursor-grab select-none text-text-muted active:cursor-grabbing"
+              title="拖动排序"
+            >
               ⠿
             </span>
             <span className="text-[12px] font-medium text-text-secondary">
@@ -319,7 +314,16 @@ export default function Dashboard({ theme }: { theme: "dark" | "light" }) {
       )}
 
       {/* 编辑模式入口（V0.3） */}
-      <div className="flex items-center justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {editing && (
+          <button
+            className="btn btn-ghost px-3 py-1 text-[12px]"
+            onClick={() => onWidgetsChange(() => DEFAULT_WIDGETS)}
+            title="恢复默认布局（重新显示全部 Widget）"
+          >
+            恢复默认
+          </button>
+        )}
         <button
           className={`btn px-3 py-1 text-[12px] ${
             editing ? "btn-primary" : "btn-ghost"
@@ -346,39 +350,58 @@ function SummaryWidget({
   usages: Record<number, ProviderUsage>;
 }) {
   const list = Object.values(usages);
-  const todayCost = list.reduce(
-    (sum, u) => sum + (u.todayCost ?? 0),
-    0,
-  );
+  // P1：按币种分组汇总，不跨币种直接相加
+  const todayCostByCurrency = new Map<string, number>();
+  for (const u of list) {
+    const c = u.currency || "—";
+    todayCostByCurrency.set(c, (todayCostByCurrency.get(c) ?? 0) + (u.todayCost ?? 0));
+  }
   const totalTokens = list.reduce((sum, u) => sum + u.totalTokens, 0);
   return (
     <section className="glass p-4">
       <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
         今日汇总
       </h3>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+      <div className="mt-3 grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
         <SummaryStat label="账户" value={String(providers.length)} />
-        <SummaryStat label="今日消耗" value={todayCost.toFixed(2)} />
+        {[...todayCostByCurrency.entries()].map(([c, v]) => (
+          <SummaryStat key={c} label={`今日消耗(${c})`} value={v.toFixed(2)} />
+        ))}
         <SummaryStat label="Token" value={totalTokens.toLocaleString("zh-CN")} />
       </div>
     </section>
   );
 }
 
-/** 费用/余额 Widget：总余额 + 近 30 天费用 */
+/** 费用/余额 Widget：总余额 + 近 30 天费用（按币种/指标分组，P1） */
 function CostWidget({ usages }: { usages: Record<number, ProviderUsage> }) {
   const list = Object.values(usages);
-  const balance = list.reduce((sum, u) => sum + (u.balance ?? 0), 0);
-  const monthCost = list.reduce((sum, u) => sum + (u.monthCost ?? 0), 0);
+  const balanceByCurrency = new Map<string, number>();
+  const monthCostByCurrency = new Map<string, number>();
+  for (const u of list) {
+    const c = u.currency || "—";
+    balanceByCurrency.set(c, (balanceByCurrency.get(c) ?? 0) + (u.balance ?? 0));
+    monthCostByCurrency.set(c, (monthCostByCurrency.get(c) ?? 0) + (u.monthCost ?? 0));
+  }
   return (
     <section className="glass p-4">
       <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
         费用概览
       </h3>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-center">
-        <SummaryStat label="账户总余额" value={balance.toFixed(2)} />
-        <SummaryStat label="近 30 天费用" value={monthCost.toFixed(2)} />
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[...balanceByCurrency.entries()].map(([c, v]) => (
+          <SummaryStat key={`b-${c}`} label={`总余额(${c})`} value={v.toFixed(2)} />
+        ))}
+        {[...monthCostByCurrency.entries()].map(([c, v]) => (
+          <SummaryStat key={`m-${c}`} label={`30天费用(${c})`} value={v.toFixed(2)} />
+        ))}
+        {balanceByCurrency.size === 0 && monthCostByCurrency.size === 0 && (
+          <SummaryStat label="暂无数据" value="—" />
+        )}
       </div>
+      <p className="mt-2 text-[10px] text-text-muted">
+        注：不同币种与订阅额度（credits）分开统计，不自动换算。
+      </p>
     </section>
   );
 }

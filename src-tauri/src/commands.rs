@@ -10,6 +10,7 @@ use crate::storage::SecureStorage;
 use crate::window_mode::{self, WindowMode, WindowState};
 use chrono::Utc;
 use serde::Serialize;
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 /// 列出全部 Provider。
@@ -22,26 +23,26 @@ pub fn list_providers(db: State<'_, Db>) -> Result<Vec<ProviderConfig>, AppError
 #[tauri::command]
 pub fn add_provider(
     db: State<'_, Db>,
-    manager: State<'_, ProviderManager>,
+    manager: State<'_, Arc<ProviderManager>>,
     name: String,
     provider_type: String,
     api_url: String,
     api_key: String,
 ) -> Result<ProviderConfig, AppError> {
-    settings::add_provider(&db, &manager, &name, &provider_type, &api_url, &api_key)
+    settings::add_provider(&db, manager.inner().as_ref(), &name, &provider_type, &api_url, &api_key)
 }
 
 /// 更新 Provider（api_key 传 Some 才更新密钥）。
 #[tauri::command]
 pub fn update_provider(
     db: State<'_, Db>,
-    manager: State<'_, ProviderManager>,
+    manager: State<'_, Arc<ProviderManager>>,
     id: i64,
     name: String,
     api_url: String,
     api_key: Option<String>,
 ) -> Result<ProviderConfig, AppError> {
-    settings::update_provider(&db, &manager, id, &name, &api_url, api_key.as_deref())
+    settings::update_provider(&db, manager.inner().as_ref(), id, &name, &api_url, api_key.as_deref())
 }
 
 /// 删除 Provider（含 keyring 凭据清理，清理失败返回可见状态）。
@@ -52,7 +53,7 @@ pub fn delete_provider(db: State<'_, Db>, id: i64) -> Result<settings::DeleteRes
 
 /// 支持的 Provider 类型（供前端下拉选择）。
 #[tauri::command]
-pub fn supported_provider_types(manager: State<'_, ProviderManager>) -> Vec<String> {
+pub fn supported_provider_types(manager: State<'_, Arc<ProviderManager>>) -> Vec<String> {
     manager.supported_types()
 }
 
@@ -60,14 +61,14 @@ pub fn supported_provider_types(manager: State<'_, ProviderManager>) -> Vec<Stri
 #[tauri::command]
 pub async fn refresh_provider(
     db: State<'_, Db>,
-    manager: State<'_, ProviderManager>,
+    manager: State<'_, Arc<ProviderManager>>,
     id: i64,
 ) -> Result<ProviderUsage, AppError> {
     let provider: ProviderConfig = settings::list_providers(&db)?
         .into_iter()
         .find(|p| p.id == id)
         .ok_or(AppError::ProviderNotFound(id))?;
-    let mut usage = fetch_usage(&manager, &provider).await?;
+    let mut usage = fetch_usage(manager.inner().as_ref(), &provider).await?;
     usage.provider_id = Some(provider.id);
     record_usage(&db, &provider, &usage)?;
     Ok(usage)
@@ -77,11 +78,44 @@ pub async fn refresh_provider(
 #[tauri::command]
 pub async fn refresh_all(
     db: State<'_, Db>,
-    manager: State<'_, ProviderManager>,
+    manager: State<'_, Arc<ProviderManager>>,
 ) -> Result<Vec<RefreshResult>, AppError> {
+    use std::sync::Arc as StdArc;
+    // P2：受控并发（最多 3 个同时请求），避免慢账户串行阻塞全部结果
+    const MAX_CONCURRENCY: usize = 3;
+
     let providers = settings::list_providers(&db)?;
+    let enabled: Vec<&ProviderConfig> = providers.iter().filter(|p| p.enabled).collect();
+    if enabled.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // 并发执行 fetch（record_usage 需要独占 db 锁，放在结果收集阶段顺序执行）
+    let sem = StdArc::new(tokio::sync::Semaphore::new(MAX_CONCURRENCY));
+    let mut tasks = tokio::task::JoinSet::new();
+    for p in enabled {
+        let permit = sem
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| AppError::Invalid(format!("刷新并发控制失败: {e}")))?;
+        let manager_arc = manager.inner().clone();
+        let provider = p.clone();
+        tasks.spawn(async move {
+            let _permit = permit;
+            let usage = fetch_usage(manager_arc.as_ref(), &provider).await;
+            (provider, usage)
+        });
+    }
+    let mut fetched = Vec::new();
+    while let Some(res) = tasks.join_next().await {
+        let (provider, usage) = res
+            .map_err(|e| AppError::Invalid(format!("刷新任务失败: {e}")))?;
+        fetched.push((provider, usage));
+    }
+
     let mut out = Vec::new();
-    for provider in providers.iter().filter(|p| p.enabled) {
+    for (provider, res) in fetched {
         let mut result = RefreshResult {
             provider_id: provider.id,
             provider: provider.provider_type.clone(),
@@ -89,16 +123,15 @@ pub async fn refresh_all(
             usage: None,
             error: None,
         };
-        match fetch_usage(&manager, provider).await {
+        match res {
             Ok(mut usage) => {
                 usage.provider_id = Some(provider.id);
-                if let Err(e) = record_usage(&db, provider, &usage) {
+                if let Err(e) = record_usage(&db, &provider, &usage) {
                     result.error = Some(format!("记录用量失败: {e}"));
-                    out.push(result);
-                    continue;
+                } else {
+                    result.success = true;
+                    result.usage = Some(usage);
                 }
-                result.success = true;
-                result.usage = Some(usage);
             }
             Err(e) => {
                 result.error = Some(e.to_string());
@@ -146,15 +179,42 @@ pub fn get_layout(db: State<'_, Db>) -> Result<Option<String>, AppError> {
 }
 
 /// 布局 JSON 校验（纯函数，供命令与测试复用，V0.3）。
+/// P2：校验 theme、widgets 数组、每项 id/type/visible、ID 唯一性、数量与大小限制。
 pub fn validate_layout_json(layout: &str) -> Result<(), String> {
+    const MAX_JSON_BYTES: usize = 64 * 1024;
+    const MAX_WIDGETS: usize = 20;
+    if layout.len() > MAX_JSON_BYTES {
+        return Err("布局 JSON 过大".into());
+    }
     let value: serde_json::Value =
         serde_json::from_str(layout).map_err(|e| format!("布局 JSON 无效: {e}"))?;
     let theme = value.get("theme").and_then(|t| t.as_str()).unwrap_or("dark");
     if theme != "dark" && theme != "light" {
         return Err("theme 仅支持 dark / light".into());
     }
-    if !value.get("widgets").is_some_and(|w| w.is_array()) {
+    let Some(arr) = value.get("widgets").and_then(|w| w.as_array()) else {
         return Err("widgets 必须为数组".into());
+    };
+    if arr.len() > MAX_WIDGETS {
+        return Err(format!("Widget 数量超限（最多 {MAX_WIDGETS} 个）"));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for w in arr {
+        let id = w.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let ty = w.get("type").and_then(|v| v.as_str()).unwrap_or("");
+        let visible = w.get("visible");
+        if id.is_empty() {
+            return Err("Widget id 不能为空".into());
+        }
+        if !ids.insert(id) {
+            return Err(format!("Widget id 重复: {id}"));
+        }
+        if !["providers", "summary", "cost"].contains(&ty) {
+            return Err(format!("未知 Widget 类型: {ty}"));
+        }
+        if !visible.is_some_and(|v| v.is_boolean()) {
+            return Err("visible 必须为布尔值".into());
+        }
     }
     Ok(())
 }
@@ -254,8 +314,8 @@ async fn fetch_usage(
     let adapter = manager
         .get(&provider.provider_type)
         .ok_or_else(|| AppError::Invalid(format!("不支持的 Provider 类型: {}", provider.provider_type)))?;
-    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不走 keyring
-    let api_key = if provider.provider_type == "codex" {
+    // 凭据来源判断：Codex 复用 CLI 本地凭证（~/.codex/auth.json），不走 keyring
+    let api_key = if provider.credential_source() == crate::providers::CredentialSource::CodexCli {
         String::new()
     } else {
         SecureStorage::get_api_key(&provider.key_ref)?
@@ -304,6 +364,76 @@ mod tests {
         assert!(super::validate_layout_json("not json").is_err());
         assert!(super::validate_layout_json(r#"{"theme":"blue","widgets":[]}"#).is_err());
         assert!(super::validate_layout_json(r#"{"theme":"dark","widgets":{}}"#).is_err());
+    }
+
+    #[test]
+    fn layout_validation_rejects_duplicate_id_and_unknown_type() {
+        let dup = r#"{"theme":"dark","widgets":[
+            {"id":"w1","type":"providers","visible":true},
+            {"id":"w1","type":"summary","visible":true}
+        ]}"#;
+        assert!(super::validate_layout_json(dup).is_err());
+        let unknown = r#"{"theme":"dark","widgets":[
+            {"id":"w1","type":"chart","visible":true}
+        ]}"#;
+        assert!(super::validate_layout_json(unknown).is_err());
+        let missing_visible = r#"{"theme":"dark","widgets":[
+            {"id":"w1","type":"providers"}
+        ]}"#;
+        assert!(super::validate_layout_json(missing_visible).is_err());
+    }
+
+    #[test]
+    fn layout_validation_rejects_oversize_and_too_many_widgets() {
+        let big = format!(r#"{{"theme":"dark","widgets":{}"#, vec!["[]"; 1].join(","));
+        let too_many = format!(
+            r#"{{"theme":"dark","widgets":[{}]}}"#,
+            (0..21)
+                .map(|i| format!(r#"{{"id":"w{i}","type":"summary","visible":true}}"#))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        assert!(super::validate_layout_json(&too_many).is_err());
+        // 超长 JSON
+        let long = format!(
+            r#"{{"theme":"dark","widgets":[{}]}}"#,
+            (0..6000)
+                .map(|i| format!(r#"{{"id":"w{i}","type":"summary","visible":true}}"#))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        assert!(super::validate_layout_json(&long).is_err());
+        let _ = big;
+    }
+}
+
+#[cfg(test)]
+mod codex_url_tests {
+    use crate::providers::ProviderManager;
+    use crate::settings::validate_provider_input;
+
+    #[test]
+    fn codex_accepts_exact_official_url() {
+        let m = ProviderManager::new();
+        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex").is_ok());
+        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex/").is_ok());
+    }
+
+    #[test]
+    fn codex_rejects_any_other_url() {
+        let m = ProviderManager::new();
+        // 恶意 host
+        assert!(validate_provider_input(&m, "codex", "https://evil.example.com").is_err());
+        // 子域伪装（chatgpt.com.evil.test）
+        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com.evil.test/backend-api/codex").is_err());
+        // 非默认端口
+        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com:8443/backend-api/codex").is_err());
+        // userinfo
+        assert!(validate_provider_input(&m, "codex", "https://user:pass@chatgpt.com/backend-api/codex").is_err());
+        // 路径混淆
+        assert!(validate_provider_input(&m, "codex", "https://chatgpt.com/backend-api/codex/../codex").is_err());
+        // 非 https
+        assert!(validate_provider_input(&m, "codex", "http://chatgpt.com/backend-api/codex").is_err());
     }
 }
 
