@@ -59,7 +59,8 @@ pub struct ProviderConfig {
     pub name: String,
     pub provider_type: String,
     pub api_url: String,
-    /// keyring 引用（service:account），绝不包含明文 API Key。
+    /// keyring 引用（service:key_<uuid>）。仅后端内部使用，不序列化给前端。
+    #[serde(skip_serializing)]
     pub key_ref: String,
     pub enabled: bool,
     pub created_time: String,

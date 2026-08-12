@@ -33,6 +33,35 @@ impl serde::Serialize for AppError {
     }
 }
 
+/// 校验 Provider 输入：类型白名单 + URL 合法性（修复 P2）。
+/// 官方/自定义 Provider 均要求 HTTPS；仅允许本机回环地址使用 HTTP（本地/自托管调试）。
+pub fn validate_provider_input(
+    manager: &crate::providers::ProviderManager,
+    provider_type: &str,
+    api_url: &str,
+) -> Result<(), AppError> {
+    if manager.get(provider_type).is_none() {
+        return Err(AppError::Invalid(format!(
+            "不支持的 Provider 类型: {provider_type}"
+        )));
+    }
+    let parsed = url::Url::parse(api_url).map_err(|_| AppError::Invalid("API URL 格式无效".into()))?;
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            let host = parsed.host_str().unwrap_or("");
+            if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+                Ok(())
+            } else {
+                Err(AppError::Invalid(
+                    "仅允许 HTTPS 地址；HTTP 仅限本机回环地址（localhost）".into(),
+                ))
+            }
+        }
+        _ => Err(AppError::Invalid("仅支持 https:// 或 http:// 地址".into())),
+    }
+}
+
 /// 列出全部 Provider（不含 API Key）。
 pub fn list_providers(db: &Db) -> Result<Vec<ProviderConfig>, AppError> {
     db.with_conn(|conn| {
@@ -54,6 +83,7 @@ pub fn list_providers(db: &Db) -> Result<Vec<ProviderConfig>, AppError> {
 #[allow(clippy::too_many_arguments)]
 pub fn add_provider(
     db: &Db,
+    manager: &crate::providers::ProviderManager,
     name: &str,
     provider_type: &str,
     api_url: &str,
@@ -69,16 +99,26 @@ pub fn add_provider(
     if api_key.is_empty() {
         return Err(AppError::Invalid("API Key 不能为空".into()));
     }
-    let key_ref = SecureStorage::save_api_key(name, api_key)?;
+    validate_provider_input(manager, provider_type, api_url)?;
+    let key_id = SecureStorage::gen_key_id();
+    let key_ref = SecureStorage::save_api_key(&key_id, api_key)?;
     let now = Utc::now().to_rfc3339();
-    let id = db.with_conn(|conn| {
+    let insert = db.with_conn(|conn| {
         conn.execute(
             "INSERT INTO providers (name, provider_type, api_url, key_ref, enabled, created_time, updated_time)
              VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
             rusqlite::params![name, provider_type, api_url, key_ref, now],
         )?;
         Ok(conn.last_insert_rowid())
-    })?;
+    });
+    let id = match insert {
+        Ok(id) => id,
+        Err(e) => {
+            // 补偿：数据库写入失败时回滚已保存的凭据，避免孤儿 key
+            let _ = SecureStorage::delete_api_key(&key_ref);
+            return Err(AppError::Db(e));
+        }
+    };
     Ok(ProviderConfig {
         id,
         name: name.to_string(),
@@ -92,14 +132,31 @@ pub fn add_provider(
 }
 
 /// 更新 Provider（名称 / API URL / 可选 API Key）。
+/// 先读旧状态，keyring 更新失败时回滚数据库修改（codereview P1 原子性）。
 pub fn update_provider(
     db: &Db,
+    manager: &crate::providers::ProviderManager,
     id: i64,
     name: &str,
     api_url: &str,
     api_key: Option<&str>,
 ) -> Result<ProviderConfig, AppError> {
     let now = Utc::now().to_rfc3339();
+    // 读取旧记录（用于回滚）
+    let old: ProviderConfig = db.with_conn(|conn| {
+        conn.query_row(
+            "SELECT id, name, provider_type, api_url, key_ref, enabled, created_time, updated_time
+             FROM providers WHERE id = ?1",
+            [id],
+            row_to_provider,
+        )
+    })
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
+        other => AppError::Db(other),
+    })?;
+    validate_provider_input(manager, &old.provider_type, api_url)?;
+
     db.with_conn(|conn| {
         let updated = conn.execute(
             "UPDATE providers SET name = ?1, api_url = ?2, updated_time = ?3 WHERE id = ?4",
@@ -114,17 +171,19 @@ pub fn update_provider(
         rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
         other => AppError::Db(other),
     })?;
-    // 更新密钥（可选）
+
+    // 更新密钥（可选）；失败则回滚数据库到旧值
     if let Some(key) = api_key {
         if !key.is_empty() {
-            let key_ref: String = db.with_conn(|conn| {
-                conn.query_row(
-                    "SELECT key_ref FROM providers WHERE id = ?1",
-                    [id],
-                    |row| row.get(0),
-                )
-            })?;
-            SecureStorage::update_api_key(&key_ref, key)?;
+            if let Err(e) = SecureStorage::update_api_key(&old.key_ref, key) {
+                let _ = db.with_conn(|conn| {
+                    conn.execute(
+                        "UPDATE providers SET name = ?1, api_url = ?2, updated_time = ?3 WHERE id = ?4",
+                        rusqlite::params![old.name, old.api_url, now, id],
+                    )
+                });
+                return Err(AppError::Storage(e));
+            }
         }
     }
     // 返回更新后的完整记录
@@ -164,8 +223,10 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<(), AppError> {
         other => AppError::Db(other),
     })?;
     if let Some(kr) = key_ref {
-        // 凭据可能已被删除/不存在，忽略清理失败
-        let _ = SecureStorage::delete_api_key(&kr);
+        // 凭据清理失败不影响记录删除，但需显式记录以便追踪（codereview P1）
+        if let Err(e) = SecureStorage::delete_api_key(&kr) {
+            eprintln!("[delete_provider] 凭据清理失败（key_ref={kr}）: {e}");
+        }
     }
     Ok(())
 }

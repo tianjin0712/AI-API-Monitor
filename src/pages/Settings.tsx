@@ -34,6 +34,7 @@ export default function Settings() {
     backgroundSecs: 60,
   });
   const [error, setError] = useState<string | null>(null);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -50,6 +51,10 @@ export default function Settings() {
       .getRefreshSettings()
       .then(setRefresh)
       .catch((e) => setError(String(e)));
+    void api
+      .getWindowState()
+      .then((s) => setAlwaysOnTop(s.alwaysOnTop))
+      .catch(() => {});
   }, [load]);
 
   const startEdit = (p: ProviderConfig) => {
@@ -260,7 +265,8 @@ export default function Settings() {
             <input
               className="input mt-1"
               type="number"
-              min={5}
+              min={10}
+              max={3600}
               value={refresh.foregroundSecs}
               onChange={(e) =>
                 setRefresh({ ...refresh, foregroundSecs: Number(e.target.value) })
@@ -272,7 +278,8 @@ export default function Settings() {
             <input
               className="input mt-1"
               type="number"
-              min={10}
+              min={60}
+              max={3600}
               value={refresh.backgroundSecs}
               onChange={(e) =>
                 setRefresh({ ...refresh, backgroundSecs: Number(e.target.value) })
@@ -283,6 +290,32 @@ export default function Settings() {
         <button className="btn btn-ghost mt-3" onClick={() => void saveRefresh()}>
           保存刷新策略
         </button>
+      </section>
+
+      {/* 窗口行为 */}
+      <section className="glass p-4">
+        <h2 className="text-[13px] font-semibold text-text-primary">窗口行为</h2>
+        <label className="mt-3 flex cursor-pointer items-center justify-between">
+          <span className="text-[13px] text-text-secondary">
+            Always On Top
+            <span className="ml-2 text-[11px] text-text-muted">窗口保持置顶</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={alwaysOnTop}
+            onChange={async (e) => {
+              const v = e.target.checked;
+              setAlwaysOnTop(v);
+              try {
+                await api.setAlwaysOnTop(v);
+              } catch (err) {
+                setError(String(err));
+                setAlwaysOnTop(!v);
+              }
+            }}
+            className="h-4 w-4 accent-(--color-accent)"
+          />
+        </label>
       </section>
     </div>
   );

@@ -2,6 +2,9 @@
 //!
 //! Windows → Credential Manager，macOS → Keychain，Linux → Secret Service。
 //! API Key 绝不落 SQLite，数据库仅存 keyring 引用（key_ref = "service:account"）。
+//!
+//! 凭据 account 使用不可预测的 uuid（key_id）而非展示名称，
+//! 避免同名账户互相覆盖（codereview P0）。
 
 use keyring::Entry;
 
@@ -21,9 +24,14 @@ pub enum StorageError {
 pub struct SecureStorage;
 
 impl SecureStorage {
-    /// 保存 API Key，返回 keyring 引用（格式 `service:account`）。
-    pub fn save_api_key(provider_name: &str, api_key: &str) -> Result<String, StorageError> {
-        let account = account_for(provider_name);
+    /// 生成一个新的凭据标识（uuid v4）。
+    pub fn gen_key_id() -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
+
+    /// 保存 API Key，返回 keyring 引用（格式 `service:key_<key_id>`）。
+    pub fn save_api_key(key_id: &str, api_key: &str) -> Result<String, StorageError> {
+        let account = account_for(key_id);
         let entry = Entry::new(KEYRING_SERVICE, &account)?;
         entry.set_password(api_key)?;
         Ok(format!("{KEYRING_SERVICE}:{account}"))
@@ -53,15 +61,9 @@ impl SecureStorage {
     }
 }
 
-/// 由 provider 名生成稳定的 account 标识。
-/// 避开 keyring 对 service/account 中冒号等字符的限制。
-fn account_for(provider_name: &str) -> String {
-    let sanitized: String = provider_name
-        .trim()
-        .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
-        .collect();
-    format!("provider_{}", sanitized)
+/// 由 key_id 生成稳定的 account 标识（`key_<uuid>`，uuid 保证唯一）。
+fn account_for(key_id: &str) -> String {
+    format!("key_{}", key_id.trim())
 }
 
 /// 解析 key_ref（`service:account`）为二元组。
@@ -70,4 +72,36 @@ fn parse_ref(key_ref: &str) -> Result<(&str, &str), StorageError> {
         .split_once(':')
         .filter(|(s, a)| !s.is_empty() && !a.is_empty())
         .ok_or_else(|| StorageError::InvalidRef(key_ref.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distinct_key_ids_produce_distinct_accounts() {
+        let a = account_for("key_11111111-1111-1111-1111-111111111111");
+        let b = account_for("key_22222222-2222-2222-2222-222222222222");
+        assert_ne!(a, b, "不同 key_id 必须映射到不同 account（修复同名覆盖）");
+    }
+
+    #[test]
+    fn same_key_id_is_stable() {
+        let id = "key_abc";
+        assert_eq!(account_for(id), account_for(id));
+    }
+
+    #[test]
+    fn parse_ref_roundtrip() {
+        let (s, a) = parse_ref("com.aiapimonitor.desktop:key_abc").expect("parse ok");
+        assert_eq!(s, "com.aiapimonitor.desktop");
+        assert_eq!(a, "key_abc");
+    }
+
+    #[test]
+    fn parse_ref_rejects_malformed() {
+        assert!(parse_ref("no-colon").is_err());
+        assert!(parse_ref("service:").is_err());
+        assert!(parse_ref(":account").is_err());
+    }
 }

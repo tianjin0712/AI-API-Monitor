@@ -71,3 +71,29 @@ impl ProviderAdapter for DeepSeekProvider {
         Ok(usage)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_balance_response() {
+        let json = r#"{
+            "is_available": true,
+            "balance_infos": [
+                { "currency": "CNY", "total_balance": "48.32", "granted_balance": "8.32", "topped_up_balance": "40.00" }
+            ]
+        }"#;
+        let resp: BalanceResponse = serde_json::from_str(json).expect("parse ok");
+        let info = resp.balance_infos.first().expect("has balance info");
+        assert_eq!(info.currency, "CNY");
+        assert_eq!(info.total_balance, "48.32");
+    }
+
+    #[test]
+    fn handles_empty_balance_infos() {
+        let json = r#"{ "is_available": false, "balance_infos": [] }"#;
+        let resp: BalanceResponse = serde_json::from_str(json).expect("parse ok");
+        assert!(resp.balance_infos.is_empty());
+    }
+}

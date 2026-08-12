@@ -7,7 +7,6 @@ export interface ProviderConfig {
   name: string;
   providerType: string;
   apiUrl: string;
-  keyRef: string;
   enabled: boolean;
   createdTime: string;
   updatedTime: string;
@@ -32,4 +31,22 @@ export interface ProviderUsage {
 export interface RefreshSettings {
   foregroundSecs: number;
   backgroundSecs: number;
+}
+
+/** refresh_all 的逐账户刷新结果 */
+export interface RefreshResult {
+  providerId: number;
+  provider: string;
+  success: boolean;
+  usage: ProviderUsage | null;
+  error: string | null;
+}
+
+/** 窗口模式（对应后端 WindowMode） */
+export type WindowMode = "full" | "mini" | "ball";
+
+/** 窗口状态 */
+export interface WindowState {
+  mode: WindowMode;
+  alwaysOnTop: boolean;
 }

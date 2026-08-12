@@ -1,13 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "./api";
 import TitleBar from "./components/TitleBar";
+import MiniBall from "./components/MiniBall";
 import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
+import type { WindowMode } from "./types";
 
 type Page = "dashboard" | "settings";
 
 export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [mode, setMode] = useState<WindowMode>("full");
 
+  // 读取窗口状态（模式 + 置顶）
+  useEffect(() => {
+    void api
+      .getWindowState()
+      .then((s) => setMode(s.mode))
+      .catch(() => {});
+  }, []);
+
+  const switchMode = async (m: WindowMode) => {
+    try {
+      const s = await api.setWindowMode(m);
+      setMode(s.mode);
+    } catch (e) {
+      console.error("切换窗口模式失败:", e);
+    }
+  };
+
+  // ---- 小球模式 ----
+  if (mode === "ball") {
+    return <MiniBall mode={mode} onExpand={() => void switchMode("full")} />;
+  }
+
+  // ---- Mini 模式 ----
+  if (mode === "mini") {
+    return (
+      <MiniBall
+        mode={mode}
+        onExpand={() => void switchMode("full")}
+        compact
+      />
+    );
+  }
+
+  // ---- Full 模式 ----
   return (
     <div
       className="flex h-screen flex-col overflow-hidden"
@@ -16,7 +54,7 @@ export default function App() {
           "radial-gradient(120% 90% at 50% 0%, rgba(108,140,255,0.10), transparent 60%), var(--color-surface)",
       }}
     >
-      <TitleBar />
+      <TitleBar onSwitchMode={(m) => void switchMode(m)} />
 
       {/* 页面切换 */}
       <nav className="mx-4 flex shrink-0 gap-1 rounded-xl border border-border/60 bg-white/[0.03] p-1">

@@ -4,11 +4,12 @@ import { formatCount, formatMoney, formatRelativeTime } from "../utils/format";
 interface Props {
   provider: ProviderConfig;
   usage?: ProviderUsage;
+  error?: string;
   refreshing: boolean;
 }
 
 /** Dashboard 上的单个 Provider 状态卡片 */
-export default function ProviderCard({ provider, usage, refreshing }: Props) {
+export default function ProviderCard({ provider, usage, error, refreshing }: Props) {
   const balance = usage?.balance ?? null;
   const remaining = usage?.remaining ?? null;
   const todayCost = usage?.todayCost ?? null;
@@ -90,6 +91,14 @@ export default function ProviderCard({ provider, usage, refreshing }: Props) {
         />
         <Stat label="更新时间" value={formatRelativeTime(usage?.updatedAt)} />
       </div>
+
+      {/* 失败/过期状态 */}
+      {error && (
+        <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-danger/25 bg-danger/10 px-2 py-1.5 text-[11px] text-danger">
+          <span className="mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />
+          <span className="line-clamp-2 break-all">{error}</span>
+        </div>
+      )}
     </div>
   );
 }

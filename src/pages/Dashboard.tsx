@@ -1,18 +1,32 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import ProviderCard from "../components/ProviderCard";
-import type { ProviderConfig, ProviderUsage, RefreshSettings } from "../types";
+import type {
+  ProviderConfig,
+  ProviderUsage,
+  RefreshSettings,
+} from "../types";
 
-/** 总览页：Provider 卡片列表 + 手动刷新 + 前台轮询 */
+/** 刷新最小间隔（毫秒），与后端校验一致 */
+const MIN_INTERVAL_MS = 5_000;
+
+/** 总览页：Provider 卡片列表 + 手动刷新 + 前台/后台轮询（单飞） */
 export default function Dashboard() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [usages, setUsages] = useState<Record<number, ProviderUsage>>({});
   const [refreshingIds, setRefreshingIds] = useState<Set<number>>(new Set());
+  const [errors, setErrors] = useState<Record<number, string>>({});
   const [refreshSettings, setRefreshSettings] = useState<RefreshSettings>({
     foregroundSecs: 10,
     backgroundSecs: 60,
   });
   const [error, setError] = useState<string | null>(null);
+
+  // 单飞控制：同一时刻只允许一个刷新任务（修复 P1 并发竞态）
+  const refreshingRef = useRef(false);
+  const refreshAllRef = useRef<(p: ProviderConfig[]) => Promise<void>>(
+    async () => {},
+  );
 
   const loadProviders = useCallback(async () => {
     try {
@@ -22,8 +36,8 @@ export default function Dashboard() {
     }
   }, []);
 
-  const refreshAll = useCallback(async () => {
-    const ids = providers.map((p) => p.id);
+  const refreshAll = useCallback(async (prov: ProviderConfig[]) => {
+    const ids = prov.map((p) => p.id);
     if (ids.length === 0) return;
     setRefreshingIds(new Set(ids));
     setError(null);
@@ -31,8 +45,18 @@ export default function Dashboard() {
       const list = await api.refreshAll();
       setUsages((prev) => {
         const next = { ...prev };
-        for (const u of list) {
-          if (u.providerId !== null) next[u.providerId] = u;
+        for (const r of list) {
+          if (r.success && r.usage?.providerId != null) {
+            next[r.usage.providerId] = r.usage;
+          }
+        }
+        return next;
+      });
+      setErrors((prev) => {
+        const next = { ...prev };
+        for (const r of list) {
+          if (r.success) delete next[r.providerId];
+          else next[r.providerId] = r.error ?? "刷新失败";
         }
         return next;
       });
@@ -41,7 +65,29 @@ export default function Dashboard() {
     } finally {
       setRefreshingIds(new Set());
     }
+  }, []);
+
+  // providers 的 ref 版本（避免 runRefresh 依赖 providers 而重建）
+  const providersRef = useRef(providers);
+  useEffect(() => {
+    providersRef.current = providers;
   }, [providers]);
+
+  // 用 ref 保持最新 refreshAll（调度 effect 不因它重建）
+  useEffect(() => {
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
+
+  // 单飞入口：调度与手动刷新共用
+  const runRefresh = useCallback(async () => {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    try {
+      await refreshAllRef.current(providersRef.current);
+    } finally {
+      refreshingRef.current = false;
+    }
+  }, []);
 
   // 首次加载：读取 Provider 列表与刷新策略
   useEffect(() => {
@@ -54,31 +100,31 @@ export default function Dashboard() {
 
   // Provider 列表变化后自动刷新一次
   useEffect(() => {
-    if (providers.length > 0) void refreshAll();
+    if (providers.length > 0) void runRefresh();
   }, [providers.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 调度器：前台 10s / 后台 60s（mission.md §12），窗口聚焦立即刷新
-  // setTimeout 链式调度，visibilitychange/focus 时重置间隔
+  // 调度器：前台/后台间隔（mission.md §12），窗口聚焦立即刷新。
+  // setTimeout 链式调度，visibilitychange/focus 重置；单飞防重叠。
   useEffect(() => {
     const intervalOf = () =>
       (document.visibilityState === "visible"
-        ? refreshSettings.foregroundSecs
-        : refreshSettings.backgroundSecs) * 1000;
+        ? Math.max(refreshSettings.foregroundSecs, 5)
+        : Math.max(refreshSettings.backgroundSecs, 60)) * 1000;
 
     let timer: number;
     const tick = () => {
-      if (refreshingIds.size === 0) void refreshAll();
-      timer = window.setTimeout(tick, Math.max(5, intervalOf()));
+      void runRefresh();
+      timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
     };
-    timer = window.setTimeout(tick, Math.max(5, intervalOf()));
+    timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
 
     const reset = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(tick, Math.max(5, intervalOf()));
+      timer = window.setTimeout(tick, Math.max(MIN_INTERVAL_MS, intervalOf()));
     };
     const onFocus = () => {
       reset();
-      if (refreshingIds.size === 0) void refreshAll();
+      void runRefresh();
     };
     document.addEventListener("visibilitychange", reset);
     window.addEventListener("focus", onFocus);
@@ -87,7 +133,7 @@ export default function Dashboard() {
       document.removeEventListener("visibilitychange", reset);
       window.removeEventListener("focus", onFocus);
     };
-  }, [refreshSettings.foregroundSecs, refreshSettings.backgroundSecs, refreshAll, refreshingIds.size]);
+  }, [refreshSettings.foregroundSecs, refreshSettings.backgroundSecs, runRefresh]);
 
   if (providers.length === 0 && !error) {
     return (
@@ -118,7 +164,7 @@ export default function Dashboard() {
         </span>
         <button
           className="btn btn-ghost px-3 py-1 text-[12px]"
-          onClick={() => void refreshAll()}
+          onClick={() => void runRefresh()}
           disabled={refreshingIds.size > 0}
         >
           {refreshingIds.size > 0 ? "刷新中…" : "立即刷新"}
@@ -130,6 +176,7 @@ export default function Dashboard() {
           key={p.id}
           provider={p}
           usage={usages[p.id]}
+          error={errors[p.id]}
           refreshing={refreshingIds.has(p.id)}
         />
       ))}
