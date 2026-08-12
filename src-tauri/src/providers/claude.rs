@@ -122,11 +122,11 @@ impl ProviderAdapter for ClaudeProvider {
         usage.currency = "$".into();
 
         // 今日口径（V0.4 复审 P1）：按 bucket 的 UTC 日期精确筛今天，不用 last()
-        let today = chrono::Utc::now().date_naive();
+        let today = now.date_naive(); // P2：复用请求开始时捕获的 now，避免跨 UTC 午夜日期不一致
         let today_usage: Vec<&UsageBucket> = usage_data
             .iter()
             .filter(|b| {
-                bucket_date(b.ending_at.as_deref(), b.starting_at.as_deref())
+                bucket_date(b.starting_at.as_deref(), b.ending_at.as_deref())
                     .map(|d| d == today)
                     .unwrap_or(false)
             })
@@ -134,7 +134,7 @@ impl ProviderAdapter for ClaudeProvider {
         let today_cost_buckets: Vec<&CostBucket> = cost_data
             .iter()
             .filter(|b| {
-                bucket_date(b.ending_at.as_deref(), b.starting_at.as_deref())
+                bucket_date(b.starting_at.as_deref(), b.ending_at.as_deref())
                     .map(|d| d == today)
                     .unwrap_or(false)
             })
@@ -163,32 +163,36 @@ impl ProviderAdapter for ClaudeProvider {
             usage.today_tokens = Some(today_input.saturating_add(today_output));
         }
         // 费用：cents → USD（÷100）；今日与近 30 天
-        let month_cents: f64 = cost_data
-            .iter()
-            .map(|b| b.results.iter().map(|r| parse_cents(&r.amount.value)).sum::<f64>())
-            .sum();
+        let mut month_cents = 0.0;
+        for b in &cost_data {
+            for r in &b.results {
+                month_cents += parse_cents(&r.amount.value)?;
+            }
+        }
         usage.month_cost = Some(month_cents / 100.0);
         // 今日费用：无今日 bucket 时 None（未知），不伪装成 Some(0)（P1）
         usage.today_cost = if today_cost_buckets.is_empty() {
             None
         } else {
-            Some(day_cents(&today_cost_buckets) / 100.0)
+            Some(day_cents(&today_cost_buckets)? / 100.0)
         };
         usage.updated_at = now.to_rfc3339();
         Ok(usage)
     }
 }
 
-/// 聚合今日费用桶的 cents 总和（纯函数，便于测试）。
-fn day_cents(buckets: &[&CostBucket]) -> f64 {
-    buckets
-        .iter()
-        .flat_map(|b| b.results.iter())
-        .map(|r| parse_cents(&r.amount.value))
-        .sum()
+/// 聚合今日费用桶的 cents 总和（非法值经 ? 传播报错）。
+fn day_cents(buckets: &[&CostBucket]) -> Result<f64, ProviderError> {
+    let mut total = 0.0;
+    for b in buckets {
+        for r in &b.results {
+            total += parse_cents(&r.amount.value)?;
+        }
+    }
+    Ok(total)
 }
 
-/// 解析 bucket 的 UTC 日期（优先 ending_at，回退 starting_at）；无法解析返回 None。
+/// 解析 RFC3339 时间戳为 UTC 日期。
 fn bucket_day(ts: Option<&str>) -> Option<chrono::NaiveDate> {
     let ts = ts?;
     chrono::DateTime::parse_from_rfc3339(ts)
@@ -196,9 +200,20 @@ fn bucket_day(ts: Option<&str>) -> Option<chrono::NaiveDate> {
         .ok()
 }
 
-/// bucket 的日期：优先 ending_at，缺失时回退 starting_at。
-fn bucket_date(bucket_ending: Option<&str>, bucket_starting: Option<&str>) -> Option<chrono::NaiveDate> {
-    bucket_day(bucket_ending).or_else(|| bucket_day(bucket_starting))
+/// bucket 所属日（P1）：优先 `starting_at`；仅当缺失时才回退 `ending_at`，
+/// 且回退时取 `ending_at - 1ns` 的日期（避免把"今日 00:00 结束"的 bucket 归到明天）。
+fn bucket_date(
+    bucket_starting: Option<&str>,
+    bucket_ending: Option<&str>,
+) -> Option<chrono::NaiveDate> {
+    if let Some(d) = bucket_day(bucket_starting) {
+        return Some(d);
+    }
+    let ending = bucket_ending?;
+    chrono::DateTime::parse_from_rfc3339(ending)
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc) - chrono::Duration::nanoseconds(1))
+        .map(|dt| dt.date_naive())
 }
 
 /// 聚合一个 bucket 的 (input, output) token。
@@ -221,9 +236,18 @@ fn cache_write_tokens(r: &UsageResult) -> u64 {
         .unwrap_or(0)
 }
 
-/// 解析成本字符串（分）；非数值视为 0。
-fn parse_cents(value: &str) -> f64 {
-    value.trim().parse::<f64>().unwrap_or(0.0)
+/// 解析成本字符串（分）。
+/// P1：非法/负/非有限值显式报错，不再静默转 0 污染趋势与预测。
+fn parse_cents(value: &str) -> Result<f64, ProviderError> {
+    let v: f64 = value.trim().parse().map_err(|_| {
+        ProviderError::Api(format!("Claude 成本格式非法: {value:?}（可能接口协议变化）"))
+    })?;
+    if !v.is_finite() || v < 0.0 {
+        return Err(ProviderError::Api(format!(
+            "Claude 成本非法（非有限或负值）: {value:?}"
+        )));
+    }
+    Ok(v)
 }
 
 /// 带分页的请求（has_more/next_page）。
@@ -355,9 +379,15 @@ mod tests {
 
     #[test]
     fn parses_cost_cents() {
-        assert_eq!(parse_cents("123"), 123.0);
-        assert_eq!(parse_cents("not-a-number"), 0.0);
-        // 当日费用换算：cents → USD
+        assert_eq!(parse_cents("123").unwrap(), 123.0);
+        assert_eq!(parse_cents(" 45.5 ").unwrap(), 45.5);
+        // 非法/负/非有限值必须显式报错（P1：不再静默转 0）
+        assert!(parse_cents("not-a-number").is_err());
+        assert!(parse_cents("nan").is_err());
+        assert!(parse_cents("inf").is_err());
+        assert!(parse_cents("-5").is_err());
+        assert!(parse_cents("").is_err());
+        // 今日费用换算：cents → USD
         let day_cents = 234;
         assert!((day_cents as f64 / 100.0 - 2.34).abs() < 1e-9);
     }
@@ -371,13 +401,19 @@ mod tests {
     }
 
     #[test]
-    fn bucket_date_prefers_ending_at_and_falls_back() {
-        // ending_at 优先
-        let d = bucket_date(Some("2025-08-13T00:00:00Z"), Some("2025-08-12T00:00:00Z"));
-        assert_eq!(d, chrono::NaiveDate::from_ymd_opt(2025, 8, 13));
-        // 缺失 ending_at 回退 starting_at
-        let d2 = bucket_date(None, Some("2025-08-12T00:00:00Z"));
+    fn bucket_date_prefers_starting_at_and_ending_falls_back_minus_1ns() {
+        // 标准日 bucket：start=8/12 00:00、end=8/13 00:00 → 归属 8/12（P1：不归到 8/13）
+        let d = bucket_date(
+            Some("2025-08-12T00:00:00Z"),
+            Some("2025-08-13T00:00:00Z"),
+        );
+        assert_eq!(d, chrono::NaiveDate::from_ymd_opt(2025, 8, 12));
+        // 仅 starting_at
+        let d2 = bucket_date(Some("2025-08-12T00:00:00Z"), None);
         assert_eq!(d2, chrono::NaiveDate::from_ymd_opt(2025, 8, 12));
+        // 仅 ending_at：结束时刻减 1ns 归入前一秒所在日（8/13 00:00 → 8/12 23:59:59.999 → 8/12）
+        let d3 = bucket_date(None, Some("2025-08-13T00:00:00Z"));
+        assert_eq!(d3, chrono::NaiveDate::from_ymd_opt(2025, 8, 12));
         // 都无法解析
         assert_eq!(bucket_date(None, None), None);
     }

@@ -121,7 +121,7 @@ impl ProviderAdapter for OpenAIProvider {
 
         // 今日口径（V0.5 复审）：按 bucket 的 UTC 日期精确筛今天，不再用 last()。
         // 分页可能把同一 bucket 拆成多条（limit=100），必须合并全部同日 bucket。
-        let today = chrono::Utc::now().date_naive();
+        let today = now.date_naive(); // P2：复用请求开始时捕获的 now，避免跨 UTC 午夜日期不一致
         let today_buckets: Vec<&UsageBucket> = usage_data
             .iter()
             .filter(|b| {
@@ -166,27 +166,39 @@ impl ProviderAdapter for OpenAIProvider {
             // 有今日 bucket 才写今日 Token（含真实 0）；无则保持 None（未知）
             usage.today_tokens = Some(input.saturating_add(output));
         }
-        // 今日费用：按 UTC 日期筛（P1），今日无 bucket 时 None（未知），不退回 last()
+        // 今日费用：按 UTC 日期筛（P1），今日无 bucket 时 None（未知）；
+        // 负值/非有限值显式报错（P2），不污染趋势与预测
         usage.today_cost = if today_cost_buckets.is_empty() {
             None
         } else {
-            Some(
-                today_cost_buckets
-                    .iter()
-                    .flat_map(|b| b.results.iter())
-                    .map(|r| r.amount.value)
-                    .sum(),
-            )
+            let mut today = 0.0;
+            for b in &today_cost_buckets {
+                for r in &b.results {
+                    today += validate_cost(r.amount.value)?;
+                }
+            }
+            Some(today)
         };
-        usage.month_cost = Some(
-            costs_data
-                .iter()
-                .map(|b| b.results.iter().map(|r| r.amount.value).sum::<f64>())
-                .sum(),
-        );
+        let mut month = 0.0;
+        for b in &costs_data {
+            for r in &b.results {
+                month += validate_cost(r.amount.value)?;
+            }
+        }
+        usage.month_cost = Some(month);
         usage.updated_at = now.to_rfc3339();
         Ok(usage)
     }
+}
+
+/// 校验费用值（P2）：负值/非有限值（NaN/Inf）显式报错，与前端趋势口径一致。
+fn validate_cost(v: f64) -> Result<f64, ProviderError> {
+    if !v.is_finite() || v < 0.0 {
+        return Err(ProviderError::Api(format!(
+            "OpenAI 费用非法（非有限或负值）: {v}"
+        )));
+    }
+    Ok(v)
 }
 
 /// 分页拉取用量 buckets（has_more/next_page 循环，最多 MAX_PAGES 页，防静默截断）。
@@ -331,5 +343,14 @@ mod tests {
         assert_eq!(u.aggregation_timestamp, Some(1711929600));
         let c: CostBucket = serde_json::from_str(json).expect("cost parse ok");
         assert_eq!(c.aggregation_timestamp, Some(1711929600));
+    }
+
+    #[test]
+    fn validate_cost_rejects_negative_and_non_finite() {
+        assert_eq!(super::validate_cost(1.5).unwrap(), 1.5);
+        assert_eq!(super::validate_cost(0.0).unwrap(), 0.0);
+        assert!(super::validate_cost(-1.0).is_err());
+        assert!(super::validate_cost(f64::NAN).is_err());
+        assert!(super::validate_cost(f64::INFINITY).is_err());
     }
 }

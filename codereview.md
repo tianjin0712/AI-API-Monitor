@@ -464,6 +464,22 @@ Codex Provider 当前还依赖未在官方 OpenAI 文档中公开承诺的 `chat
 - `pnpm build`：通过
 - `pnpm tauri dev`：端到端启动正常
 
+## 批次 10：数据口径新问题（提交 `（待提交）`）
+
+| 问题 | 状态 | 说明 |
+| --- | --- | --- |
+| P1：Claude 优先用排他的 ending_at 判断日期，今日 bucket 被归到明天 | ✅ 已修复 | `bucket_date` 改为优先 `starting_at`；仅缺失时回退 `ending_at` 且取 `ending_at - 1ns` 的日期（今日 00:00 结束的 bucket 不再归到明天）；两处调用同步；测试覆盖标准日 bucket/仅 start/仅 end/全缺 |
+| P1：Claude 非法费用字符串静默转 0 | ✅ 已修复 | `parse_cents` 改 `Result`：解析失败/负值/NaN/Inf/空串显式报错；`day_cents` 改 `Result` 并 `?` 传播；近 30 天与今日费用聚合逐项校验——不再污染趋势与预测 |
+| P2：OpenAI 费用缺负值/有限值校验 | ✅ 已修复 | `validate_cost` 纯函数：负值/NaN/Inf 显式报错（与前端趋势过滤口径一致）；today/month 聚合循环逐项 `?` 传播 |
+| P2：OpenAI/Claude 请求后重读当前日期，跨 UTC 午夜不一致 | ✅ 已修复 | 今日筛选统一复用请求开始时捕获的 `now.date_naive()`，两文件均无第二次 `Utc::now()` |
+
+### 测试状态更新
+
+- `cargo test`：**46 passed / 0 failed**（bucket_date 语义重写、parse_cents 非法值、validate_cost 新增）
+- `cargo check`：零警告
+- `pnpm build`：通过
+- `pnpm tauri dev`：端到端启动正常
+
 # 修复状态审计：未完成项核查（2026-08-12 22:18:35 +08:00）
 
 审查基线：提交 `fbd95ae`，重点复核文末“修复记录”是否与当前代码和可执行测试一致。
@@ -920,3 +936,67 @@ V0.5 已搭建历史查询、趋势图、预测和通知链路，工程可以构
 | V0.5 费用趋势/预测整改 | 未完全完成 |
 | V0.5 自动提醒 | 代码链路完成，真实通知待验证 |
 | V0.5 整体整改 | 约完成，仍需修复上述 2 个 P1 后再验收 |
+# 继续审计：V0.5 Provider 日期口径（2026-08-12 23:51:11 +08:00）
+
+审查基线：提交 `1b34853`（V0.5 复审二次遗留）与 `1cc60e8`。本轮先核对上一轮 4 项，再向外检查 OpenAI/Claude 日期 bucket 和费用解析语义。
+
+## 结论
+
+上一轮发现的 4 项已经全部落实：OpenAI 今日费用按日期筛选并合并同日 bucket；Claude 无今日费用 bucket 时保存 `None`；OpenAI 同日 Token 合并；V3→V4 外键级联迁移测试已补齐。
+
+但继续阅读发现 Claude 的 bucket 日期判断方向错误，属于新的 P1：Anthropic `ending_at` 是排他边界，代码却优先用它作为所属日期。标准日 bucket `starting_at=今天 00:00, ending_at=明天 00:00` 会被归入明天，导致今天的 Token 与费用无法入库。当前测试反而固定了这个错误行为。因此 V0.5 仍不能最终关闭。
+
+## 上轮问题核查
+
+| 上轮问题 | 状态 | 代码证据 |
+| --- | --- | --- |
+| OpenAI 今日费用取最后 bucket | ✅ 已修复 | `CostBucket` 解析时间，按 UTC 日期筛选所有今日 bucket；无今日 bucket 为 `None`。 |
+| Claude 无今日费用 bucket 写 Some(0) | ✅ 已修复 | 空集合写 `None`，非空才调用 `day_cents`，可保留真实零值。 |
+| OpenAI 今日 Token 只取首个 bucket | ✅ 已修复 | 对全部 `today_buckets` fold 聚合 input/output/cached。 |
+| V3→V4 缺外键级联测试 | ✅ 已修复 | 新测试启用 foreign_keys，迁移后删除 Provider 并断言历史行级联清空。 |
+
+## 新发现的问题
+
+### P1：Claude 使用排他的 `ending_at` 判断 bucket 日期，今日数据会被归到明天
+
+- 位置：`src-tauri/src/providers/claude.rs:127-139,191-201,374-382`。
+- Anthropic Usage/Cost bucket 的 `starting_at` 是包含边界，`ending_at` 是排他边界。一个代表 8 月 12 日的日 bucket 通常是：`starting_at=2025-08-12T00:00:00Z`，`ending_at=2025-08-13T00:00:00Z`。
+- 当前 `bucket_date` 优先解析 `ending_at`，于是把该 bucket 判为 8 月 13 日。应用在 8 月 12 日刷新时，`today_usage` 与 `today_cost_buckets` 都会过滤掉真实今日数据；Token/费用历史将保存未知。
+- 当前测试 `bucket_date_prefers_ending_at_and_falls_back` 明确期待 8 月 13 日，测试本身固化了错误口径。
+- 修复：优先使用 `starting_at`；只有缺少 starting 时，才可将 `ending_at` 转为所属区间日期。对 1d bucket 最稳妥的 fallback 是 `ending_at - 1ns/1s` 后取 UTC 日期，而不是直接取 ending 日期。
+- 必须新增标准日 bucket 回归测试：start 8/12 00:00、end 8/13 00:00，应归属 8/12。
+
+### P1：Claude 非法费用字符串被静默转换为真实 0
+
+- 位置：`src-tauri/src/providers/claude.rs:225-227,357-360`。
+- `parse_cents` 对任何解析失败返回 `0.0`，测试还断言 `not-a-number → 0`。服务端协议变化、精度格式异常或脏数据会被当作真实零费用，进入月费用和今日费用。
+- 这与 V4 的“未知费用用 NULL、不要伪装为 0”原则冲突。若某个 CostResult 的 amount 非法，应让本次 Provider 刷新显式失败，至少不能把该项静默计零。
+- 建议将 `parse_cents` 改为 `Result<f64, ProviderError>`，同时拒绝 NaN、Infinity 和负值；聚合函数传播错误并增加非法金额测试。
+
+### P2：OpenAI 费用数值缺少有限值/负值校验
+
+- 位置：`src-tauri/src/providers/openai.rs:48-63,170-183`。
+- `CostAmount.value` 直接反序列化为 `f64` 后求和，没有检查负值或非有限值。JSON 标准通常拒绝 NaN/Infinity，但负费用是否可能代表 credit/adjustment 需要明确业务语义；当前前端趋势会过滤负值，而历史/预测仍可能使用它。
+- 应明确 OpenAI Costs API 是否允许负调整项。若允许，预测算法应定义如何处理；若不允许，应在 Provider 层拒绝。前后端不能一个保存、一个过滤。
+
+### P2：Provider 日期筛选使用当前时间二次读取，存在跨 UTC 午夜边界不一致
+
+- 位置：`src-tauri/src/providers/openai.rs:93,123`，`src-tauri/src/providers/claude.rs:100,124`。
+- 两个适配器已经保存 `now` 用于查询区间，却在筛选 today 时再次调用 `Utc::now()`。请求恰好跨 UTC 午夜时，查询结束时间属于前一天，但筛选日期变成后一天，可能把返回数据全部判为非今日。
+- 应统一使用请求开始时捕获的 `now.date_naive()`，保证同一次刷新口径稳定。
+
+## 验证结果
+
+- `pnpm build`：通过。
+- `cargo test`（`src-tauri`）：45 passed，0 failed。
+- `git diff --check`：通过。
+- 45 个测试均通过不代表日期口径正确；Claude 现有测试正在验证错误的 ending_at 优先逻辑。
+
+## 当前判断
+
+| 范围 | 状态 |
+| --- | --- |
+| 上一轮 4 项整改 | 已完成 |
+| OpenAI 当日 Token/费用口径 | 基本完成，需统一捕获时间与费用负值语义 |
+| Claude 当日 Token/费用口径 | 未完成，存在排他结束时间归日错误 |
+| V0.5 历史/趋势/预测 | 仍不可最终验收，需先修 Claude 两个 P1 |
