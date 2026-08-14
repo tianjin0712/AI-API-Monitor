@@ -1,4 +1,4 @@
-import type { DashboardWidget, Layout } from "../types";
+import type { DashboardWidget, Layout, WidgetType } from "../types";
 import { isLuotianyiBackgroundId, isLuotianyiGifId } from "./themeAssets";
 
 export const THEME_OVERRIDE_KEYS = [
@@ -17,7 +17,30 @@ export const DEFAULT_WIDGETS: DashboardWidget[] = [
   { id: "w-trend", type: "trend", visible: true },
 ];
 
-const VALID_TYPES = ["providers", "summary", "cost", "trend"];
+const VALID_TYPES = ["providers", "summary", "cost", "trend"] as const;
+
+/** 可用的 Widget 类型（编辑模式下可添加/删除，每类最多一个实例）。 */
+export const WIDGET_TYPES: WidgetType[] = [...VALID_TYPES];
+
+/** Widget 类型的中文名（编辑模式添加菜单）。 */
+export const WIDGET_TYPE_LABELS: Record<WidgetType, string> = {
+  providers: "账户列表",
+  summary: "今日汇总",
+  cost: "费用概览",
+  trend: "趋势",
+};
+
+/** 生成与现有 id 不冲突的 Widget id（`w-<type>`，冲突时追加序号）。 */
+export function nextWidgetId(existing: DashboardWidget[], type: WidgetType): string {
+  const used = new Set(existing.map((widget) => widget.id));
+  let candidate = `w-${type}`;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `w-${type}-${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
+}
 
 /** 解析后端布局 JSON；无效/缺失时回退默认布局（V0.3） */
 export function parseWidgets(

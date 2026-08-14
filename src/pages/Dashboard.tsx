@@ -2,9 +2,10 @@ import { useState } from "react";
 import ProviderCard from "../components/ProviderCard";
 import TrendWidget from "../components/TrendWidget";
 import { Checkbox } from "../components/ui/Controls";
-import { DEFAULT_WIDGETS } from "../utils/layout";
+import AppSelect from "../components/ui/AppSelect";
+import { DEFAULT_WIDGETS, WIDGET_TYPE_LABELS, WIDGET_TYPES, nextWidgetId } from "../utils/layout";
 import { useMonitorStore } from "../state/MonitorStore";
-import type { DashboardWidget, ProviderUsage } from "../types";
+import type { DashboardWidget, ProviderUsage, WidgetType } from "../types";
 import { luotianyiGifPath } from "../utils/themeAssets";
 
 interface Props {
@@ -18,7 +19,18 @@ export default function Dashboard({ widgets, onWidgetsChange, visualTheme, avata
   const { providers, usages, errors, manualRefreshingIds, refreshAll, refreshOne, historyRevision } = useMonitorStore();
   const [editing, setEditing] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [addType, setAddType] = useState<WidgetType>("providers");
   const visibleWidgets = widgets.filter((widget) => widget.visible);
+  const missingTypes = WIDGET_TYPES.filter((type) => !widgets.some((widget) => widget.type === type));
+
+  const addWidget = () => {
+    const type = addType;
+    onWidgetsChange((list) =>
+      list.some((widget) => widget.type === type)
+        ? list
+        : [...list, { id: nextWidgetId(list, type), type, visible: true }],
+    );
+  };
 
   const renderWidget = (widget: DashboardWidget, index: number) => {
     const body = widget.type === "summary" ? <SummaryWidget providers={providers.length} usages={usages} />
@@ -31,14 +43,14 @@ export default function Dashboard({ widgets, onWidgetsChange, visualTheme, avata
         </>}</div>;
     if (!editing) return <div key={widget.id}>{body}</div>;
     return <div key={widget.id} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (dragIndex !== null && dragIndex !== index) onWidgetsChange((list) => { const next = [...list]; const [moved] = next.splice(dragIndex, 1); next.splice(index, 0, moved); return next; }); setDragIndex(null); }} className="relative rounded-2xl border border-dashed border-border bg-card/60">
-      <div className="flex items-center justify-between px-3 pt-2"><span draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} className="cursor-grab text-text-muted">⋮⋮</span><Checkbox checked={widget.visible} onChange={() => onWidgetsChange((list) => list.map((item) => item.id === widget.id ? { ...item, visible: !item.visible } : item))} label="显示" /></div><div className="px-3 pb-3 pt-1">{body}</div>
+      <div className="flex items-center justify-between px-3 pt-2"><span draggable onDragStart={() => setDragIndex(index)} onDragEnd={() => setDragIndex(null)} className="cursor-grab text-text-muted">⋮⋮</span><div className="flex items-center gap-3"><Checkbox checked={widget.visible} onChange={() => onWidgetsChange((list) => list.map((item) => item.id === widget.id ? { ...item, visible: !item.visible } : item))} label="显示" /><button type="button" className="text-[12px] text-text-muted hover:opacity-70" onClick={() => onWidgetsChange((list) => list.filter((item) => item.id !== widget.id))} aria-label={`删除 ${WIDGET_TYPE_LABELS[widget.type]} Widget`}>删除</button></div></div><div className="px-3 pb-3 pt-1">{body}</div>
     </div>;
   };
 
   return <div className="dashboard-panel flex flex-col gap-3">
     <section className={`welcome-hero mx-card relative flex min-h-28 items-center overflow-hidden px-4 py-3 ${visualTheme === "luotianyi" ? "luotianyi-hero" : ""}`}><div className="relative z-10 max-w-[58%]"><div className="welcome-eyebrow text-[11px] font-semibold uppercase text-accent">{visualTheme === "luotianyi" ? "LUO TIANYI" : "AI API MONITOR"}</div><h2 className="welcome-title mt-1 font-bold text-text-primary">今天也在好好管理 Token</h2><p className="mt-1 text-[11px] leading-relaxed text-text-secondary">账户状态、余额与消耗会在这里持续更新。</p></div>{avatarGif && <img className="pointer-events-none absolute bottom-1 right-2 h-[104px] w-[104px] object-contain" src={luotianyiGifPath(avatarGif)} alt="洛天依动画" />}</section>
     {(editing ? widgets : visibleWidgets).map(renderWidget)}
-    <div className="flex items-center justify-end gap-2 pt-1">{editing && <button className="micro-glass-pill" onClick={() => onWidgetsChange(() => DEFAULT_WIDGETS)}>恢复默认</button>}<button className={`micro-glass-pill ${editing ? "is-active" : ""}`} onClick={() => setEditing((value) => !value)}>{editing ? "完成编辑" : "编辑布局"}</button></div>
+    <div className="flex items-center justify-end gap-2 pt-1">{editing && <><AppSelect value={addType} options={missingTypes.map((type) => ({ value: type, label: WIDGET_TYPE_LABELS[type] }))} onChange={(value) => setAddType(value as WidgetType)} placeholder="选择 Widget 类型" className="w-36" aria-label="选择要添加的 Widget 类型" /><button className="micro-glass-pill" onClick={addWidget} disabled={missingTypes.length === 0}>添加 Widget</button><button className="micro-glass-pill" onClick={() => onWidgetsChange(() => DEFAULT_WIDGETS)}>恢复默认</button></>}<button className={`micro-glass-pill ${editing ? "is-active" : ""}`} onClick={() => setEditing((value) => !value)}>{editing ? "完成编辑" : "编辑布局"}</button></div>
   </div>;
 }
 
