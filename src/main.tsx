@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
+import "./styles/miuix.css";
+import "./styles/miuix-official.css";
 
 const cachedTheme = window.localStorage.getItem("ai-monitor-theme");
 if (cachedTheme === "dark" || cachedTheme === "light") {

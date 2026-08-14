@@ -49,9 +49,7 @@ impl ProviderAdapter for DeepSeekProvider {
         config: &ProviderConfig,
         api_key: &str,
     ) -> Result<ProviderUsage, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .build()
+        let client = crate::security::secure_http_client(15)
             .map_err(|e| ProviderError::Http(e.to_string()))?;
 
         let url = format!("{}/user/balance", config.api_url.trim_end_matches('/'));
@@ -64,8 +62,9 @@ impl ProviderAdapter for DeepSeekProvider {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().await.unwrap_or_default();
-            return Err(ProviderError::Api(format!("HTTP {status}: {body}")));
+            return Err(ProviderError::Api(crate::security::safe_http_status_error(
+                status,
+            )));
         }
 
         let data: BalanceResponse = resp

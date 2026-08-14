@@ -12,6 +12,8 @@ impl Db {
     /// 打开（必要时创建）数据库文件并执行迁移。
     pub fn open(db_path: &Path) -> rusqlite::Result<Self> {
         let conn = Connection::open(db_path)?;
+        crate::platform_security::harden_private_path(db_path, false)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         migrate(&conn)?;
@@ -116,6 +118,24 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         conn.pragma_update(None, "user_version", version)?;
     }
 
+    if version < 5 {
+        conn.execute_batch("ALTER TABLE providers ADD COLUMN key_hint TEXT NOT NULL DEFAULT '';")?;
+        version = 5;
+        conn.pragma_update(None, "user_version", version)?;
+    }
+
+    if version < 6 {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS secure_settings (
+                key        TEXT PRIMARY KEY,
+                nonce      BLOB NOT NULL,
+                ciphertext BLOB NOT NULL
+             );",
+        )?;
+        version = 6;
+        conn.pragma_update(None, "user_version", version)?;
+    }
+
     Ok(())
 }
 
@@ -130,7 +150,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 6);
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
             .unwrap()
@@ -138,7 +158,7 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        for t in ["providers", "usage_history", "settings"] {
+        for t in ["providers", "usage_history", "settings", "secure_settings"] {
             assert!(tables.iter().any(|x| x == t), "缺少表 {t}");
         }
     }
@@ -151,7 +171,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 6);
     }
 
     #[test]
@@ -194,7 +214,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 4);
+        assert_eq!(version, 6);
         // 数据保留：tokens/cost/balance 原样，today_tokens 为 NULL（未知）
         let (tokens, today_tokens, cost, balance): (i64, Option<i64>, f64, f64) = conn
             .query_row(
@@ -268,7 +288,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            4
+            6
         );
 
         // 删除 provider，usage_history 应级联清空

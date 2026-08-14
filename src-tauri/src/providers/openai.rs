@@ -90,10 +90,14 @@ impl ProviderAdapter for OpenAIProvider {
         config: &ProviderConfig,
         api_key: &str,
     ) -> Result<ProviderUsage, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
-            .map_err(|e| ProviderError::Http(e.to_string()))?;
+        let client = if config.provider_type == "custom" {
+            crate::security::secure_http_client_for_custom_endpoint(&config.api_url, 20)
+                .await
+                .map_err(ProviderError::Http)?
+        } else {
+            crate::security::secure_http_client(20)
+                .map_err(|e| ProviderError::Http(e.to_string()))?
+        };
 
         // 近 30 天（按天 bucket）
         let now = chrono::Utc::now();
@@ -294,8 +298,9 @@ async fn fetch_json<T: DeserializeOwned>(
         .map_err(|e| ProviderError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("HTTP {status}: {body}")));
+        return Err(ProviderError::Api(crate::security::safe_http_status_error(
+            status,
+        )));
     }
     resp.json()
         .await

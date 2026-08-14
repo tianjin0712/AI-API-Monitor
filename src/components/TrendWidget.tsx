@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { DailyUsage, Prediction, ProviderConfig } from "../types";
+import AppSelect from "./ui/AppSelect";
 import { getPredictionUnavailableReason } from "../utils/prediction";
 
 interface Props {
@@ -80,33 +81,16 @@ export default function TrendWidget({ providers, historyRevision }: Props) {
   const predictionUnavailableReason = getPredictionUnavailableReason(prediction);
 
   return (
-    <section className="glass p-4">
+    <section className="mx-card p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-[12px] font-semibold uppercase tracking-wide text-text-muted">
           消耗趋势
         </h3>
         <div className="flex items-center gap-1.5">
           {providers.length > 1 && (
-            <select
-              className="input px-2 py-0.5 text-[11px]"
-              value={effectiveId ?? ""}
-              onChange={(e) => setSelectedId(Number(e.target.value))}
-            >
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <AppSelect className="trend-select" value={String(effectiveId ?? "")} options={providers.map((p) => ({ value: String(p.id), label: p.name }))} onChange={(value) => setSelectedId(Number(value))} aria-label="Provider" />
           )}
-          <select
-            className="input px-2 py-0.5 text-[11px]"
-            value={metric}
-            onChange={(e) => setMetric(e.target.value as "tokens" | "cost")}
-          >
-            <option value="cost">费用</option>
-            <option value="tokens">Token</option>
-          </select>
+          <AppSelect className="trend-select" value={metric} options={[{ value: "cost", label: "费用" }, { value: "tokens", label: "Token" }]} onChange={(value) => setMetric(value as "tokens" | "cost")} aria-label="指标" />
         </div>
       </div>
 
@@ -176,7 +160,7 @@ export default function TrendWidget({ providers, historyRevision }: Props) {
 
 function Mini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex-1 rounded-lg bg-white/[0.03] px-2 py-1.5">
+    <div className="widget-stat flex-1 rounded-lg px-2 py-1.5">
       <div className="truncate text-[13px] font-semibold text-text-primary">
         {value}
       </div>

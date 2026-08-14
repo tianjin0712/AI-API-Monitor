@@ -93,9 +93,7 @@ impl ProviderAdapter for ClaudeProvider {
         config: &ProviderConfig,
         api_key: &str,
     ) -> Result<ProviderUsage, ProviderError> {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(20))
-            .build()
+        let client = crate::security::secure_http_client(20)
             .map_err(|e| ProviderError::Http(e.to_string()))?;
 
         let now = chrono::Utc::now();
@@ -338,8 +336,9 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(
         .map_err(|e| ProviderError::Http(e.to_string()))?;
     if !resp.status().is_success() {
         let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(ProviderError::Api(format!("HTTP {status}: {body}")));
+        return Err(ProviderError::Api(crate::security::safe_http_status_error(
+            status,
+        )));
     }
     resp.json()
         .await

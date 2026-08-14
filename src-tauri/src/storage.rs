@@ -7,9 +7,11 @@
 //! 避免同名账户互相覆盖（codereview P0）。
 
 use keyring::Entry;
+use zeroize::Zeroizing;
 
 /// keyring service 名（与 tauri.conf.json identifier 对齐）。
 const KEYRING_SERVICE: &str = "com.aiapimonitor.desktop";
+const DATA_KEY_ACCOUNT: &str = "data_encryption_key_v1";
 
 /// 安全存储错误。
 #[derive(Debug, thiserror::Error)]
@@ -38,10 +40,10 @@ impl SecureStorage {
     }
 
     /// 读取 API Key（按 key_ref）。
-    pub fn get_api_key(key_ref: &str) -> Result<String, StorageError> {
+    pub fn get_api_key(key_ref: &str) -> Result<Zeroizing<String>, StorageError> {
         let (_service, account) = parse_ref(key_ref)?;
         let entry = Entry::new(KEYRING_SERVICE, account)?;
-        Ok(entry.get_password()?)
+        Ok(Zeroizing::new(entry.get_password()?))
     }
 
     /// 删除 API Key（按 key_ref）。
@@ -59,6 +61,27 @@ impl SecureStorage {
         entry.set_password(api_key)?;
         Ok(())
     }
+
+    /// Get or create the AES-256 data-encryption key in the platform keyring.
+    pub fn data_encryption_key() -> Result<Zeroizing<Vec<u8>>, StorageError> {
+        use base64::Engine;
+        use rand::RngCore;
+        let entry = Entry::new(KEYRING_SERVICE, DATA_KEY_ACCOUNT)?;
+        match entry.get_password() {
+            Ok(encoded) => base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map(Zeroizing::new)
+                .map_err(|_| StorageError::InvalidRef("invalid protected data key".into())),
+            Err(keyring::Error::NoEntry) => {
+                let mut key = Zeroizing::new(vec![0u8; 32]);
+                rand::thread_rng().fill_bytes(&mut key);
+                let encoded = base64::engine::general_purpose::STANDARD.encode(key.as_slice());
+                entry.set_password(&encoded)?;
+                Ok(key)
+            }
+            Err(error) => Err(StorageError::Keyring(error)),
+        }
+    }
 }
 
 /// 由 key_id 生成稳定的 account 标识（`key_<uuid>`，uuid 保证唯一）。
@@ -68,10 +91,16 @@ fn account_for(key_id: &str) -> String {
 
 /// 解析 key_ref（`service:account`）为二元组。
 fn parse_ref(key_ref: &str) -> Result<(&str, &str), StorageError> {
-    key_ref
+    let parsed = key_ref
         .split_once(':')
         .filter(|(s, a)| !s.is_empty() && !a.is_empty())
-        .ok_or_else(|| StorageError::InvalidRef(key_ref.to_string()))
+        .ok_or_else(|| StorageError::InvalidRef("malformed credential reference".into()))?;
+    if parsed.0 != KEYRING_SERVICE || !parsed.1.starts_with("key_") {
+        return Err(StorageError::InvalidRef(
+            "untrusted credential reference".into(),
+        ));
+    }
+    Ok(parsed)
 }
 
 #[cfg(test)]

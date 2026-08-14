@@ -10,6 +10,7 @@ use std::collections::HashMap;
 pub mod claude;
 pub mod codex;
 pub mod deepseek;
+pub mod desktop_runtime;
 /// 暂未注册（官方无公开余额/用量查询端点）；保留实现与说明供未来启用。
 #[allow(dead_code)]
 pub mod gemini;
@@ -37,7 +38,37 @@ pub struct ProviderUsage {
     pub month_cost: Option<f64>,
     pub remaining: Option<f64>,
     pub reset_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex: Option<CodexUsageDetails>,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexUsageDetails {
+    pub runtime_source: String,
+    pub plan_type: Option<String>,
+    pub credits: Option<serde_json::Value>,
+    pub windows: Vec<CodexRateLimitWindow>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexRateLimitWindow {
+    pub limit_id: Option<String>,
+    pub limit_name: Option<String>,
+    pub window_kind: String,
+    pub used_percent: f64,
+    pub remaining_percent: f64,
+    pub window_duration_mins: Option<u64>,
+    pub resets_at: Option<i64>,
+    pub unlimited: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_used: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens_remaining: Option<u64>,
 }
 
 impl ProviderUsage {
@@ -57,6 +88,7 @@ impl ProviderUsage {
             month_cost: None,
             remaining: None,
             reset_time: None,
+            codex: None,
             updated_at: String::new(),
         }
     }
@@ -73,6 +105,8 @@ pub struct ProviderConfig {
     /// keyring 引用（service:key_<uuid>）。仅后端内部使用，不序列化给前端。
     #[serde(skip_serializing)]
     pub key_ref: String,
+    /// Non-sensitive UI representation, for example `sk-****1234`.
+    pub key_hint: String,
     pub enabled: bool,
     pub created_time: String,
     pub updated_time: String,
@@ -84,15 +118,15 @@ pub struct ProviderConfig {
 pub enum CredentialSource {
     /// 密钥存于系统凭据库（keyring），key_ref 为其引用。
     Keyring,
-    /// 复用 Codex CLI 本地登录态（~/.codex/auth.json），key_ref 为空。
-    CodexCli,
+    /// 仅查询 Codex CLI 公开登录状态；不读取或保存任何认证材料。
+    PublicCliStatus,
 }
 
 impl ProviderConfig {
     /// 凭据来源（按类型推导，Codex 为唯一 CLI 凭证类型）。
     pub fn credential_source(&self) -> CredentialSource {
         if self.provider_type == "codex" {
-            CredentialSource::CodexCli
+            CredentialSource::PublicCliStatus
         } else {
             CredentialSource::Keyring
         }

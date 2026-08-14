@@ -19,14 +19,17 @@
         "minHeight": 480,
         "decorations": false,
         "transparent": true,
+        "backgroundColor": "#00000000",
         "shadow": false,
-        "resizable": true,
+        "resizable": false,
+        "maximizable": false,
+        "fullscreen": false,
         "center": true
       }
     ],
     "security": {
-      "csp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'",
-      "devCsp": "default-src 'self' customprotocol: asset:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 ws://localhost:1421; img-src 'self' asset: http://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' customprotocol:; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' app-resource: http://app-resource.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'",
+      "devCsp": "default-src 'self' customprotocol:; connect-src 'self' ipc: http://ipc.localhost http://localhost:1420 ws://localhost:1420 ws://localhost:1421; img-src 'self' app-resource: http://app-resource.localhost data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'"
     }
   },
   "plugins": {

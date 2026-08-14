@@ -13,6 +13,41 @@ use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::sync::Arc;
 use tauri::{AppHandle, State};
+use tauri_plugin_autostart::ManagerExt;
+
+/// Import image bytes into the isolated application asset directory.
+#[tauri::command]
+pub fn import_asset(
+    assets: State<'_, crate::assets::AssetStore>,
+    original_name: String,
+    data: Vec<u8>,
+) -> Result<crate::assets::ImportedAsset, AppError> {
+    assets
+        .import(&original_name, &data)
+        .map_err(|error| AppError::Invalid(error.to_string()))
+}
+
+/// Delete only an opaque asset previously created by this application.
+#[tauri::command]
+pub fn delete_asset(
+    assets: State<'_, crate::assets::AssetStore>,
+    asset_id: String,
+) -> Result<(), AppError> {
+    assets
+        .delete(&asset_id)
+        .map_err(|error| AppError::Invalid(error.to_string()))
+}
+
+/// Read an imported image back for local color analysis.
+#[tauri::command]
+pub fn read_asset(
+    assets: State<'_, crate::assets::AssetStore>,
+    asset_id: String,
+) -> Result<Vec<u8>, AppError> {
+    assets
+        .read_bytes(&asset_id)
+        .map_err(|error| AppError::Invalid(error.to_string()))
+}
 
 /// 列出全部 Provider。
 #[tauri::command]
@@ -30,13 +65,14 @@ pub fn add_provider(
     api_url: String,
     api_key: String,
 ) -> Result<ProviderConfig, AppError> {
+    let api_key = zeroize::Zeroizing::new(api_key);
     settings::add_provider(
         &db,
         manager.inner().as_ref(),
         &name,
         &provider_type,
         &api_url,
-        &api_key,
+        api_key.as_str(),
     )
 }
 
@@ -50,13 +86,14 @@ pub fn update_provider(
     api_url: String,
     api_key: Option<String>,
 ) -> Result<ProviderConfig, AppError> {
+    let api_key = api_key.map(zeroize::Zeroizing::new);
     settings::update_provider(
         &db,
         manager.inner().as_ref(),
         id,
         &name,
         &api_url,
-        api_key.as_deref(),
+        api_key.as_ref().map(|value| value.as_str()),
     )
 }
 
@@ -70,6 +107,16 @@ pub fn delete_provider(db: State<'_, Db>, id: i64) -> Result<settings::DeleteRes
 #[tauri::command]
 pub fn supported_provider_types(manager: State<'_, Arc<ProviderManager>>) -> Vec<String> {
     manager.supported_types()
+}
+
+#[tauri::command]
+pub fn is_custom_endpoint_approved(db: State<'_, Db>, api_url: String) -> Result<bool, AppError> {
+    settings::is_custom_endpoint_approved(&db, &api_url)
+}
+
+#[tauri::command]
+pub fn approve_custom_endpoint(db: State<'_, Db>, api_url: String) -> Result<String, AppError> {
+    settings::approve_custom_endpoint(&db, &api_url)
 }
 
 /// 立即刷新指定 Provider 并记录当日用量。
@@ -170,6 +217,22 @@ pub async fn refresh_all(
     Ok(out)
 }
 
+#[tauri::command]
+pub async fn get_codex_runtime_status(
+) -> Result<crate::providers::codex::CodexRuntimeStatus, AppError> {
+    tokio::task::spawn_blocking(crate::providers::codex::runtime_status)
+        .await
+        .map_err(|_| AppError::Invalid("Codex Runtime 状态检测失败".into()))
+}
+
+#[tauri::command]
+pub async fn start_codex_login() -> Result<(), AppError> {
+    tokio::task::spawn_blocking(crate::providers::codex::start_login)
+        .await
+        .map_err(|_| AppError::Invalid("Codex 登录任务启动失败".into()))?
+        .map_err(|error| AppError::Invalid(error.to_string()))
+}
+
 /// 单个 Provider 的刷新结果（成功/失败均返回，前端据此展示可信度）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -189,6 +252,57 @@ pub fn get_refresh_settings(db: State<'_, Db>) -> Result<RefreshSettings, AppErr
         foreground_secs: settings::refresh_foreground_secs(&db)?,
         background_secs: settings::refresh_background_secs(&db)?,
     })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppBehaviorSettings {
+    pub close_behavior: String,
+    pub auto_start: bool,
+}
+
+#[tauri::command]
+pub fn get_app_behavior_settings(
+    app: AppHandle,
+    db: State<'_, Db>,
+) -> Result<AppBehaviorSettings, AppError> {
+    let close_behavior = settings::get_setting(&db, settings::SETTING_CLOSE_BEHAVIOR)?
+        .filter(|value| value == "minimize_to_tray" || value == "quit")
+        .unwrap_or_else(|| "minimize_to_tray".to_string());
+    let auto_start = app
+        .autolaunch()
+        .is_enabled()
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    Ok(AppBehaviorSettings {
+        close_behavior,
+        auto_start,
+    })
+}
+
+#[tauri::command]
+pub fn set_close_behavior(db: State<'_, Db>, close_behavior: String) -> Result<(), AppError> {
+    if close_behavior != "minimize_to_tray" && close_behavior != "quit" {
+        return Err(AppError::Invalid("关闭按钮行为无效".into()));
+    }
+    settings::set_setting(&db, settings::SETTING_CLOSE_BEHAVIOR, &close_behavior)
+}
+
+#[tauri::command]
+pub fn set_auto_start(app: AppHandle, enabled: bool) -> Result<bool, AppError> {
+    let result = if enabled {
+        app.autolaunch().enable()
+    } else {
+        app.autolaunch().disable()
+    };
+    result.map_err(|_| {
+        AppError::Invalid(format!(
+            "无法{}开机自启动，请检查系统权限",
+            if enabled { "启用" } else { "关闭" }
+        ))
+    })?;
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| AppError::Invalid(e.to_string()))
 }
 
 /// 读取旧凭据迁移失败数（供前端提示需重新录入的账户）。
@@ -448,9 +562,12 @@ pub fn check_alerts(
                     map.insert(provider.id, level);
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[check_alerts] 通知发送失败（provider={}，level={level:?}）: {e}",
-                        provider.name
+                    crate::security::safe_log(
+                        "check_alerts",
+                        format!(
+                            "通知发送失败（provider={}，level={level:?}）: {e}",
+                            provider.name
+                        ),
                     );
                 }
             }
@@ -477,19 +594,77 @@ pub struct UpdateInfo {
     pub notes: Option<String>,
 }
 
+fn validate_updater_security_config() -> Result<(), AppError> {
+    let config: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+        .map_err(|_| AppError::Invalid("更新器安全配置无效".into()))?;
+    let updater = &config["plugins"]["updater"];
+    let public_key = updater["pubkey"].as_str().unwrap_or("").trim();
+    let endpoints = updater["endpoints"].as_array().cloned().unwrap_or_default();
+    if public_key.is_empty() || endpoints.is_empty() {
+        return Err(AppError::Invalid(
+            "自动更新已安全禁用：尚未配置签名公钥与 HTTPS 更新源".into(),
+        ));
+    }
+    for endpoint in endpoints {
+        let value = endpoint
+            .as_str()
+            .ok_or_else(|| AppError::Invalid("更新源格式无效".into()))?;
+        let url =
+            url::Url::parse(value).map_err(|_| AppError::Invalid("更新源 URL 无效".into()))?;
+        if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+            return Err(AppError::Invalid(
+                "自动更新仅允许无内嵌凭据的 HTTPS 更新源".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// 检查是否有可用更新（需要发布前配置 updater 签名与更新源）。
+fn validate_update_transition(
+    current_version: &str,
+    expected_version: &str,
+    available_version: &str,
+) -> Result<(), AppError> {
+    if expected_version != available_version {
+        return Err(AppError::Invalid(
+            "The available update changed. Check again before installing.".into(),
+        ));
+    }
+    let parse = |value: &str| {
+        semver::Version::parse(value.trim_start_matches(['v', 'V']))
+            .map_err(|_| AppError::Invalid("Invalid update version.".into()))
+    };
+    let current = parse(current_version)?;
+    let available = parse(available_version)?;
+    if available <= current {
+        return Err(AppError::Invalid(
+            "Update downgrade or reinstall was blocked.".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, AppError> {
     use tauri_plugin_updater::UpdaterExt;
+    validate_updater_security_config()?;
     let updater = app
         .updater()
         .map_err(|e| AppError::Invalid(format!("更新器未配置（发布前需配置签名与更新源）: {e}")))?;
     match updater.check().await {
-        Ok(Some(update)) => Ok(UpdateInfo {
-            available: true,
-            version: Some(update.version.clone()),
-            notes: update.body.clone(),
-        }),
+        Ok(Some(update)) => {
+            validate_update_transition(
+                env!("CARGO_PKG_VERSION"),
+                &update.version,
+                &update.version,
+            )?;
+            Ok(UpdateInfo {
+                available: true,
+                version: Some(update.version.clone()),
+                notes: update.body.clone(),
+            })
+        }
         Ok(None) => Ok(UpdateInfo {
             available: false,
             version: None,
@@ -503,6 +678,14 @@ pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, AppError> {
 #[tauri::command]
 pub async fn install_update(app: AppHandle, expected_version: String) -> Result<String, AppError> {
     use tauri_plugin_updater::UpdaterExt;
+    validate_updater_security_config()?;
+    if expected_version.len() > 64
+        || !expected_version
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'+'))
+    {
+        return Err(AppError::Invalid("待安装版本号格式无效".into()));
+    }
     let updater = app
         .updater()
         .map_err(|e| AppError::Invalid(format!("更新器未配置: {e}")))?;
@@ -511,12 +694,11 @@ pub async fn install_update(app: AppHandle, expected_version: String) -> Result<
         .await
         .map_err(|e| AppError::Invalid(format!("更新检查失败: {e}")))?
         .ok_or_else(|| AppError::Invalid("当前没有可用更新".into()))?;
-    if expected_version.is_empty() || update.version != expected_version {
-        return Err(AppError::Invalid(format!(
-            "可用版本已变化（当前 v{}），请重新检查并确认",
-            update.version
-        )));
-    }
+    validate_update_transition(
+        env!("CARGO_PKG_VERSION"),
+        &expected_version,
+        &update.version,
+    )?;
     update
         .download_and_install(|_, _| {}, || {})
         .await
@@ -545,12 +727,21 @@ pub fn validate_layout_json(layout: &str) -> Result<(), String> {
         let Some(map) = overrides.as_object() else {
             return Err("themeOverrides 必须为对象".into());
         };
-        const ALLOWED: [&str; 6] = [
+        const ALLOWED: [&str; 15] = [
             "accent",
+            "accent-dim",
+            "accent-contrast",
             "surface",
             "card",
+            "card-hover",
+            "control",
+            "control-hover",
+            "border",
             "text-primary",
+            "text-secondary",
+            "text-muted",
             "success",
+            "warning",
             "danger",
         ];
         if map.len() > ALLOWED.len() {
@@ -673,6 +864,11 @@ pub fn set_always_on_top(
     Ok(window_mode::current_state(&db))
 }
 
+#[tauri::command]
+pub fn snap_window_to_work_area(app: AppHandle) -> Result<(), AppError> {
+    window_mode::snap_window_to_work_area(&app)
+}
+
 /// 读取当前窗口状态（模式 + 置顶）。
 #[tauri::command]
 pub fn get_window_state(db: State<'_, Db>) -> WindowState {
@@ -698,12 +894,13 @@ async fn fetch_usage(
             provider.provider_type
         ))
     })?;
-    // 凭据来源判断：Codex 复用 CLI 本地凭证（~/.codex/auth.json），不走 keyring
-    let api_key = if provider.credential_source() == crate::providers::CredentialSource::CodexCli {
-        String::new()
-    } else {
-        SecureStorage::get_api_key(&provider.key_ref)?
-    };
+    // Codex 只查询 CLI 的公开登录状态，不读取凭据或 auth 文件。
+    let api_key =
+        if provider.credential_source() == crate::providers::CredentialSource::PublicCliStatus {
+            zeroize::Zeroizing::new(String::new())
+        } else {
+            SecureStorage::get_api_key(&provider.key_ref)?
+        };
     adapter
         .fetch_usage(provider, &api_key)
         .await
@@ -811,6 +1008,8 @@ mod tests {
         assert!(super::validate_layout_json(ok).is_ok());
         let ok_light = r#"{"theme":"light","widgets":[]}"#;
         assert!(super::validate_layout_json(ok_light).is_ok());
+        let full_palette = r##"{"theme":"light","widgets":[],"themeOverrides":{"accent":"#336699","accent-dim":"#224466","accent-contrast":"#ffffff","surface":"#eef3f7","card":"#ffffff","card-hover":"#e5edf3","control":"#f4f7fa","control-hover":"#e8eef3","border":"#7890a0","text-primary":"#101820","text-secondary":"#405060","text-muted":"#607080","success":"#087f5b","warning":"#a65f00","danger":"#c92a45"}}"##;
+        assert!(super::validate_layout_json(full_palette).is_ok());
     }
 
     #[test]
@@ -918,6 +1117,26 @@ mod codex_url_tests {
         assert!(
             validate_provider_input(&m, "codex", "http://chatgpt.com/backend-api/codex").is_err()
         );
+    }
+}
+
+#[cfg(test)]
+mod updater_security_tests {
+    #[test]
+    fn updater_is_disabled_until_signed_https_config_exists() {
+        let result = super::validate_updater_security_config();
+        assert!(result.is_err());
+        let message = result.unwrap_err().to_string();
+        assert!(message.contains("安全禁用"));
+    }
+
+    #[test]
+    fn update_transition_allows_only_a_confirmed_upgrade() {
+        assert!(super::validate_update_transition("1.2.3", "1.2.4", "1.2.4").is_ok());
+        assert!(super::validate_update_transition("1.2.3", "1.2.3", "1.2.3").is_err());
+        assert!(super::validate_update_transition("1.2.3", "1.2.2", "1.2.2").is_err());
+        assert!(super::validate_update_transition("1.2.3", "1.2.4", "1.2.5").is_err());
+        assert!(super::validate_update_transition("1.2.3", "latest", "latest").is_err());
     }
 }
 

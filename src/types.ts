@@ -18,6 +18,7 @@ export interface ProviderConfig {
   name: string;
   providerType: string;
   apiUrl: string;
+  keyHint: string;
   enabled: boolean;
   createdTime: string;
   updatedTime: string;
@@ -38,12 +39,40 @@ export interface ProviderUsage {
   monthCost: number | null;
   remaining: number | null;
   resetTime: string | null;
+  /** Codex Desktop/App Server 返回的动态额度详情；其他 Provider 不提供。 */
+  codex?: CodexUsageDetails | null;
   updatedAt: string;
+}
+
+export interface CodexUsageDetails {
+  runtimeSource: string;
+  planType: string | null;
+  credits: unknown | null;
+  windows: CodexRateLimitWindow[];
+}
+
+export interface CodexRateLimitWindow {
+  limitId: string | null;
+  limitName: string | null;
+  windowKind: string;
+  usedPercent: number;
+  remainingPercent: number;
+  windowDurationMins: number | null;
+  /** Unix 时间戳（秒）。 */
+  resetsAt: number | null;
+  unlimited: boolean;
+  tokenLimit?: number;
+  tokensUsed?: number;
+  tokensRemaining?: number;
 }
 
 export interface RefreshSettings {
   foregroundSecs: number;
   backgroundSecs: number;
+}
+export interface AppBehaviorSettings {
+  closeBehavior: "minimize_to_tray" | "quit";
+  autoStart: boolean;
 }
 
 /** refresh_all 的逐账户刷新结果 */
@@ -86,6 +115,20 @@ export interface DashboardWidget {
 /** DIY 布局（JSON 持久化，含主题） */
 export interface Layout {
   theme: "dark" | "light";
+  /** 可选视觉主题；洛天依主题会应用专属配色与动态角色。 */
+  visualTheme?: "default" | "luotianyi" | "custom";
+  /** 主页面与悬浮窗口使用的洛天依 GIF，可独立于视觉主题选择。 */
+  avatarGif?: string;
+  /** 洛天依主题背景（内置背景 ID 或用户自定义背景 ID）。 */
+  luotianyiBackground?: string;
+  /** 液态玻璃卡片不透明度（0.15–0.9）。 */
+  glassOpacity?: number;
+  /** 壁纸模式下的背景模糊强度（0–32px）。 */
+  glassBlur?: number;
+  /** Mini 悬浮窗专用文字色；未设置时跟随主题主文字。 */
+  miniTextColor?: string;
+  /** 悬浮窗额度模块切换方式。 */
+  floatingScrollMode?: "auto" | "wheel";
   widgets: DashboardWidget[];
   /** V1.0 自定义主题：CSS 变量名（不含 --color- 前缀）→ 色值 */
   themeOverrides?: Record<string, string>;
@@ -122,4 +165,10 @@ export interface UpdateInfo {
   available: boolean;
   version: string | null;
   notes: string | null;
+}
+
+/** Opaque application-owned image resource; never contains a user file path. */
+export interface ImportedAsset {
+  assetId: string;
+  url: string;
 }

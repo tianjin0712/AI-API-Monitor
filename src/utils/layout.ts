@@ -1,7 +1,10 @@
 import type { DashboardWidget, Layout } from "../types";
+import { isLuotianyiBackgroundId, isLuotianyiGifId } from "./themeAssets";
 
 export const THEME_OVERRIDE_KEYS = [
-  "accent", "surface", "card", "text-primary", "success", "danger",
+  "accent", "accent-dim", "accent-contrast", "surface", "card", "card-hover",
+  "control", "control-hover", "border", "text-primary", "text-secondary", "text-muted",
+  "success", "warning", "danger",
 ] as const;
 const THEME_OVERRIDE_KEY_SET = new Set<string>(THEME_OVERRIDE_KEYS);
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -68,6 +71,21 @@ export function parseLayout(json: string | null): Layout {
   if (!json) return layout;
   try {
     const parsed = JSON.parse(json) as Partial<Layout>;
+    if (parsed.visualTheme === "luotianyi" || parsed.visualTheme === "custom") layout.visualTheme = parsed.visualTheme;
+    if (isLuotianyiGifId(parsed.avatarGif)) layout.avatarGif = parsed.avatarGif;
+    if (isLuotianyiBackgroundId(parsed.luotianyiBackground)) layout.luotianyiBackground = parsed.luotianyiBackground;
+    if (typeof parsed.glassOpacity === "number" && Number.isFinite(parsed.glassOpacity)) {
+      layout.glassOpacity = Math.max(0.15, Math.min(0.9, parsed.glassOpacity));
+    }
+    if (typeof parsed.glassBlur === "number" && Number.isFinite(parsed.glassBlur)) {
+      layout.glassBlur = Math.max(0, Math.min(32, parsed.glassBlur));
+    }
+    if (typeof parsed.miniTextColor === "string" && HEX_COLOR.test(parsed.miniTextColor)) {
+      layout.miniTextColor = parsed.miniTextColor;
+    }
+    if (parsed.floatingScrollMode === "auto" || parsed.floatingScrollMode === "wheel") {
+      layout.floatingScrollMode = parsed.floatingScrollMode;
+    }
     if (!parsed.themeOverrides || typeof parsed.themeOverrides !== "object") return layout;
     const overrides: Record<string, string> = {};
     for (const [key, value] of Object.entries(parsed.themeOverrides)) {

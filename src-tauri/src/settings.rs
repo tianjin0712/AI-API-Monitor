@@ -15,6 +15,9 @@ pub const SETTING_REFRESH_FOREGROUND_SECS: &str = "refresh.foregroundSecs";
 pub const SETTING_REFRESH_BACKGROUND_SECS: &str = "refresh.backgroundSecs";
 /// settings 键名：DIY 布局 JSON（V0.3，含 theme 与 widgets）
 pub const SETTING_LAYOUT: &str = "ui.layout";
+pub const SETTING_TELEMETRY_ENABLED: &str = "privacy.telemetryEnabled";
+pub const SETTING_APPROVED_CUSTOM_ORIGINS: &str = "network.approvedCustomOrigins";
+pub const SETTING_CLOSE_BEHAVIOR: &str = "app.closeBehavior";
 
 /// 应用层错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
@@ -31,12 +34,14 @@ pub enum AppError {
 
 impl serde::Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
+        serializer.serialize_str(&crate::security::SensitiveDataFilter::redact(
+            &self.to_string(),
+        ))
     }
 }
 
 /// 校验 Provider 输入：类型白名单 + URL 合法性（修复 P2）。
-/// 官方/自定义 Provider 均要求 HTTPS；仅允许本机回环地址使用 HTTP（本地/自托管调试）。
+/// 所有携带凭据的 Provider 请求都必须使用 HTTPS。
 pub fn validate_provider_input(
     manager: &crate::providers::ProviderManager,
     provider_type: &str,
@@ -56,29 +61,43 @@ pub fn validate_provider_input(
         }
         return Ok(());
     }
+    let official_url = match provider_type {
+        "deepseek" => Some("https://api.deepseek.com"),
+        "openai" => Some("https://api.openai.com/v1"),
+        "openrouter" => Some("https://openrouter.ai"),
+        "siliconflow" => Some("https://api.siliconflow.cn/v1"),
+        "claude" => Some("https://api.anthropic.com/v1"),
+        "custom" => None,
+        _ => None,
+    };
+    if let Some(official_url) = official_url {
+        if api_url.trim_end_matches('/') != official_url {
+            return Err(AppError::Invalid(
+                "内置 Provider 必须使用注册表中的固定官方 HTTPS 地址；自定义网关请使用 custom 类型"
+                    .into(),
+            ));
+        }
+        return Ok(());
+    }
     let parsed =
         url::Url::parse(api_url).map_err(|_| AppError::Invalid("API URL 格式无效".into()))?;
-    match parsed.scheme() {
-        "https" => Ok(()),
-        "http" => {
-            let host = parsed.host_str().unwrap_or("");
-            if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-                Ok(())
-            } else {
-                Err(AppError::Invalid(
-                    "仅允许 HTTPS 地址；HTTP 仅限本机回环地址（localhost）".into(),
-                ))
-            }
-        }
-        _ => Err(AppError::Invalid("仅支持 https:// 或 http:// 地址".into())),
+    if parsed.scheme() != "https" {
+        return Err(AppError::Invalid("API 地址必须使用 https://".into()));
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(AppError::Invalid("API 地址禁止包含用户名或密码".into()));
+    }
+    if parsed.host_str().is_none() {
+        return Err(AppError::Invalid("API 地址缺少有效主机名".into()));
+    }
+    Ok(())
 }
 
 /// 列出全部 Provider（不含 API Key）。
 pub fn list_providers(db: &Db) -> Result<Vec<ProviderConfig>, AppError> {
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, provider_type, api_url, key_ref, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
              FROM providers ORDER BY id",
         )?;
         let rows = stmt.query_map([], row_to_provider)?;
@@ -112,19 +131,25 @@ pub fn add_provider(
         return Err(AppError::Invalid("API Key 不能为空".into()));
     }
     validate_provider_input(manager, provider_type, api_url)?;
-    // Codex 复用 CLI 本地凭证（~/.codex/auth.json），不写入 keyring，key_ref 为空
+    if provider_type == "custom" && !is_custom_endpoint_approved(db, api_url)? {
+        return Err(AppError::Invalid(
+            "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
+        ));
+    }
+    // Codex 仅查询 CLI 公开登录状态，不读取认证文件，也不写入 keyring。
     let key_ref = if api_key.is_empty() {
         String::new()
     } else {
         let key_id = SecureStorage::gen_key_id();
         SecureStorage::save_api_key(&key_id, api_key)?
     };
+    let key_hint = crate::security::mask_secret(api_key);
     let now = Utc::now().to_rfc3339();
     let insert = db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO providers (name, provider_type, api_url, key_ref, enabled, created_time, updated_time)
-             VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)",
-            rusqlite::params![name, provider_type, api_url, key_ref, now],
+            "INSERT INTO providers (name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)",
+            rusqlite::params![name, provider_type, api_url, key_ref, key_hint, now],
         )?;
         Ok(conn.last_insert_rowid())
     });
@@ -142,6 +167,7 @@ pub fn add_provider(
         provider_type: provider_type.to_string(),
         api_url: api_url.to_string(),
         key_ref,
+        key_hint,
         enabled: true,
         created_time: now.clone(),
         updated_time: now,
@@ -163,7 +189,7 @@ pub fn update_provider(
     let old: ProviderConfig = db
         .with_conn(|conn| {
             conn.query_row(
-            "SELECT id, name, provider_type, api_url, key_ref, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
              FROM providers WHERE id = ?1",
             [id],
             row_to_provider,
@@ -174,6 +200,11 @@ pub fn update_provider(
             other => AppError::Db(other),
         })?;
     validate_provider_input(manager, &old.provider_type, api_url)?;
+    if old.provider_type == "custom" && !is_custom_endpoint_approved(db, api_url)? {
+        return Err(AppError::Invalid(
+            "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
+        ));
+    }
 
     db.with_conn(|conn| {
         let updated = conn.execute(
@@ -202,12 +233,20 @@ pub fn update_provider(
                 });
                 return Err(AppError::Storage(e));
             }
+            let key_hint = crate::security::mask_secret(key);
+            db.with_conn(|conn| {
+                conn.execute(
+                    "UPDATE providers SET key_hint = ?1 WHERE id = ?2",
+                    rusqlite::params![key_hint, id],
+                )?;
+                Ok(())
+            })?;
         }
     }
     // 返回更新后的完整记录
     db.with_conn(|conn| {
         conn.query_row(
-            "SELECT id, name, provider_type, api_url, key_ref, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
              FROM providers WHERE id = ?1",
             [id],
             row_to_provider,
@@ -263,7 +302,7 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
                 note: None,
             }),
             Err(e) => {
-                eprintln!("[delete_provider] 凭据清理失败（key_ref={kr}）: {e}");
+                crate::security::safe_log("delete_provider", format!("凭据清理失败: {e}"));
                 Ok(DeleteResult {
                     provider_id: id,
                     credential_cleaned: false,
@@ -308,6 +347,163 @@ pub fn delete_setting(db: &Db, key: &str) -> Result<(), AppError> {
     .map_err(AppError::from)
 }
 
+/// Store a sensitive local field with AES-256-GCM. The encryption key is kept
+/// only in the operating-system keyring and never in SQLite/config files.
+pub fn set_sensitive_setting(db: &Db, key: &str, value: &str) -> Result<(), AppError> {
+    let master_key = SecureStorage::data_encryption_key()?;
+    let (ciphertext, nonce) = crate::security::encrypt_sensitive(&master_key, value.as_bytes())
+        .map_err(|error| AppError::Invalid(error.to_string()))?;
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO secure_settings (key, nonce, ciphertext) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET nonce = excluded.nonce, ciphertext = excluded.ciphertext",
+            rusqlite::params![key, nonce.as_slice(), ciphertext],
+        )?;
+        Ok(())
+    })?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn get_sensitive_setting(
+    db: &Db,
+    key: &str,
+) -> Result<Option<zeroize::Zeroizing<String>>, AppError> {
+    let row: Option<(Vec<u8>, Vec<u8>)> = db.with_conn(|conn| {
+        conn.query_row(
+            "SELECT nonce, ciphertext FROM secure_settings WHERE key = ?1",
+            [key],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+    })?;
+    let Some((nonce, ciphertext)) = row else {
+        return Ok(None);
+    };
+    let nonce: [u8; 12] = nonce
+        .try_into()
+        .map_err(|_| AppError::Invalid("敏感字段 nonce 无效".into()))?;
+    let master_key = SecureStorage::data_encryption_key()?;
+    let clear = crate::security::decrypt_sensitive(&master_key, &nonce, &ciphertext)
+        .map_err(|error| AppError::Invalid(error.to_string()))?;
+    let value = String::from_utf8(clear.to_vec())
+        .map_err(|_| AppError::Invalid("敏感字段编码无效".into()))?;
+    Ok(Some(zeroize::Zeroizing::new(value)))
+}
+
+fn is_sensitive_setting_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "api_key",
+        "apikey",
+        "token",
+        "cookie",
+        "password",
+        "secret",
+        "authorization",
+    ]
+    .iter()
+    .any(|marker| key.contains(marker))
+}
+
+/// Migrate any legacy plaintext sensitive setting into the encrypted table.
+pub fn migrate_sensitive_settings(db: &Db) -> Result<usize, AppError> {
+    let rows: Vec<(String, String)> = db.with_conn(|conn| {
+        let mut statement = conn.prepare("SELECT key, value FROM settings")?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect();
+        rows
+    })?;
+    let mut migrated = 0;
+    for (key, value) in rows {
+        if is_sensitive_setting_key(&key) {
+            set_sensitive_setting(db, &key, &value)?;
+            delete_setting(db, &key)?;
+            migrated += 1;
+        }
+    }
+    Ok(migrated)
+}
+
+pub fn ensure_privacy_defaults(db: &Db) -> Result<(), AppError> {
+    if get_setting(db, SETTING_TELEMETRY_ENABLED)?.is_none() {
+        set_setting(db, SETTING_TELEMETRY_ENABLED, "false")?;
+    }
+    Ok(())
+}
+
+fn approved_custom_origins(db: &Db) -> Result<Vec<String>, AppError> {
+    let Some(json) = get_setting(db, SETTING_APPROVED_CUSTOM_ORIGINS)? else {
+        return Ok(Vec::new());
+    };
+    let values: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
+    Ok(values
+        .into_iter()
+        .filter(|origin| crate::security::custom_endpoint_origin(origin).is_ok())
+        .take(32)
+        .collect())
+}
+
+pub fn is_custom_endpoint_approved(db: &Db, api_url: &str) -> Result<bool, AppError> {
+    let origin = crate::security::custom_endpoint_origin(api_url).map_err(AppError::Invalid)?;
+    Ok(approved_custom_origins(db)?
+        .iter()
+        .any(|approved| approved == &origin))
+}
+
+pub fn approve_custom_endpoint(db: &Db, api_url: &str) -> Result<String, AppError> {
+    let origin = crate::security::custom_endpoint_origin(api_url).map_err(AppError::Invalid)?;
+    let mut approved = approved_custom_origins(db)?;
+    if !approved.iter().any(|value| value == &origin) {
+        if approved.len() >= 32 {
+            return Err(AppError::Invalid("已批准的自定义网关数量达到上限".into()));
+        }
+        approved.push(origin.clone());
+        approved.sort();
+        set_setting(
+            db,
+            SETTING_APPROVED_CUSTOM_ORIGINS,
+            &serde_json::to_string(&approved)
+                .map_err(|_| AppError::Invalid("无法保存自定义网关批准记录".into()))?,
+        )?;
+    }
+    Ok(origin)
+}
+
+/// Populate non-sensitive masked hints for records created before schema V5.
+pub fn migrate_missing_key_hints(db: &Db) -> Result<usize, AppError> {
+    let rows: Vec<(i64, String)> = db.with_conn(|conn| {
+        let mut statement = conn
+            .prepare("SELECT id, key_ref FROM providers WHERE key_ref <> '' AND key_hint = ''")?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect();
+        rows
+    })?;
+    let mut migrated = 0;
+    for (id, key_ref) in rows {
+        match SecureStorage::get_api_key(&key_ref) {
+            Ok(key) => {
+                let hint = crate::security::mask_secret(&key);
+                db.with_conn(|conn| {
+                    conn.execute(
+                        "UPDATE providers SET key_hint = ?1 WHERE id = ?2",
+                        rusqlite::params![hint, id],
+                    )?;
+                    Ok(())
+                })?;
+                migrated += 1;
+            }
+            Err(error) => crate::security::safe_log(
+                "migration",
+                format!("provider id={id} 的 Key 掩码迁移失败: {error}"),
+            ),
+        }
+    }
+    Ok(migrated)
+}
+
 /// 旧凭据迁移结果（供前端提示需重新录入的账户数）。
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -342,19 +538,20 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
                 let new_ref = SecureStorage::save_api_key(&key_id, &api_key)?;
                 db.with_conn(|conn| {
                     conn.execute(
-                        "UPDATE providers SET key_ref = ?1 WHERE id = ?2",
-                        rusqlite::params![new_ref, id],
+                        "UPDATE providers SET key_ref = ?1, key_hint = ?2 WHERE id = ?3",
+                        rusqlite::params![new_ref, crate::security::mask_secret(&api_key), id],
                     )
                 })?;
                 if let Err(e) = SecureStorage::delete_api_key(&key_ref) {
-                    eprintln!("[migrate] 清理旧凭据失败（{key_ref}）: {e}");
+                    crate::security::safe_log("migrate", format!("清理旧凭据失败: {e}"));
                 }
                 migrated += 1;
             }
             Err(e) => {
                 // 凭据无法读取：保留旧记录并统计失败，供前端提示用户重新录入
-                eprintln!(
-                    "[migrate] 旧凭据无法读取（{key_ref}，provider id={id}）: {e}，请重新录入该账户"
+                crate::security::safe_log(
+                    "migrate",
+                    format!("旧凭据无法读取（provider id={id}）: {e}，请重新录入该账户"),
                 );
                 failed += 1;
             }
@@ -385,8 +582,63 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProviderConfig> 
         provider_type: row.get(2)?,
         api_url: row.get(3)?,
         key_ref: row.get(4)?,
-        enabled: row.get::<_, i64>(5)? != 0,
-        created_time: row.get(6)?,
-        updated_time: row.get(7)?,
+        key_hint: row.get(5)?,
+        enabled: row.get::<_, i64>(6)? != 0,
+        created_time: row.get(7)?,
+        updated_time: row.get(8)?,
     })
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_all_http_provider_urls() {
+        let manager = crate::providers::ProviderManager::new();
+        for url in [
+            "http://example.com",
+            "http://localhost:8080",
+            "file:///tmp/key",
+        ] {
+            assert!(validate_provider_input(&manager, "deepseek", url).is_err());
+        }
+        assert!(validate_provider_input(&manager, "deepseek", "https://api.deepseek.com").is_ok());
+        assert!(validate_provider_input(&manager, "deepseek", "https://evil.example").is_err());
+        assert!(validate_provider_input(&manager, "custom", "https://gateway.example/v1").is_ok());
+    }
+
+    #[test]
+    fn identifies_sensitive_setting_names() {
+        for key in [
+            "provider.api_key",
+            "oauth.refreshToken",
+            "session.cookie",
+            "db.password",
+        ] {
+            assert!(is_sensitive_setting_key(key));
+        }
+        assert!(!is_sensitive_setting_key(SETTING_LAYOUT));
+    }
+
+    #[test]
+    fn custom_endpoint_approval_is_explicit_and_origin_scoped() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);\n\
+                 CREATE TABLE secure_settings (key TEXT PRIMARY KEY, ciphertext BLOB NOT NULL, nonce BLOB NOT NULL);",
+            )
+            .unwrap();
+        let db = Db(std::sync::Mutex::new(connection));
+        let endpoint = "https://gateway.example.com/v1";
+        assert!(!is_custom_endpoint_approved(&db, endpoint).unwrap());
+        assert_eq!(
+            approve_custom_endpoint(&db, endpoint).unwrap(),
+            "https://gateway.example.com"
+        );
+        assert!(is_custom_endpoint_approved(&db, endpoint).unwrap());
+        assert!(is_custom_endpoint_approved(&db, "https://gateway.example.com/v2").unwrap());
+        assert!(!is_custom_endpoint_approved(&db, "https://other.example.com/v1").unwrap());
+    }
 }

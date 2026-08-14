@@ -1,10 +1,16 @@
 // AI API Monitor - Rust 后端入口
+mod assets;
 mod commands;
 mod db;
+mod platform_security;
 mod providers;
+mod security;
 mod settings;
 mod storage;
 mod window_mode;
+
+#[cfg(test)]
+mod security_tests;
 
 use crate::db::Db;
 use crate::providers::ProviderManager;
@@ -12,6 +18,7 @@ use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
 
 /// 主窗口标签名（与 tauri.conf.json 一致）。
 pub const MAIN_WINDOW: &str = "main";
@@ -19,13 +26,26 @@ pub const MAIN_WINDOW: &str = "main";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        .register_uri_scheme_protocol("app-resource", |context, request| {
+            assets::protocol_response(context.app_handle(), request)
+        })
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // 初始化 SQLite 数据库（app data 目录）
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            platform_security::harden_private_path(&data_dir, true)?;
+            let log_dir = data_dir.join("logs");
+            std::fs::create_dir_all(&log_dir)?;
+            platform_security::harden_private_path(&log_dir, true)?;
+            let assets = assets::AssetStore::new(&data_dir)
+                .map_err(|error| std::io::Error::other(error.to_string()))?;
+            app.manage(assets);
             let db_path = data_dir.join("ai-api-monitor.db");
             let db = Db::open(&db_path).map_err(|error| {
                 std::io::Error::other(format!("无法打开应用数据库 {}: {error}", db_path.display()))
@@ -43,7 +63,10 @@ pub fn run() {
                             settings::SETTING_MIGRATION_LEGACY_FAILED,
                             &r.failed.to_string(),
                         );
-                        eprintln!("[setup] {} 个旧凭据无法读取，需用户重新录入", r.failed);
+                        security::safe_log(
+                            "setup",
+                            format!("{} 个旧凭据无法读取，需用户重新录入", r.failed),
+                        );
                     } else {
                         // 全部迁移成功时清除历史标记，避免警告永久残留（review should-fix）
                         let _ = settings::delete_setting(
@@ -52,7 +75,17 @@ pub fn run() {
                         );
                     }
                 }
-                Err(e) => eprintln!("[setup] 凭据迁移失败: {e}"),
+                Err(e) => security::safe_log("setup", format!("凭据迁移失败: {e}")),
+            }
+            let db = app.state::<Db>();
+            if let Err(error) = settings::migrate_missing_key_hints(&db) {
+                security::safe_log("setup", format!("Key 掩码迁移失败: {error}"));
+            }
+            if let Err(error) = settings::migrate_sensitive_settings(&db) {
+                security::safe_log("setup", format!("敏感设置迁移失败: {error}"));
+            }
+            if let Err(error) = settings::ensure_privacy_defaults(&db) {
+                security::safe_log("setup", format!("隐私默认值初始化失败: {error}"));
             }
 
             setup_tray(app)?;
@@ -61,21 +94,33 @@ pub fn run() {
 
             // 启动时恢复窗口模式与置顶设置（V0.2）
             window_mode::restore_window_state(app)?;
+            crate::providers::codex::start_rate_limit_monitor(app.handle().clone());
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::import_asset,
+            commands::delete_asset,
+            commands::read_asset,
             commands::list_providers,
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,
             commands::supported_provider_types,
+            commands::is_custom_endpoint_approved,
+            commands::approve_custom_endpoint,
             commands::refresh_provider,
             commands::refresh_all,
+            commands::get_codex_runtime_status,
+            commands::start_codex_login,
             commands::get_refresh_settings,
             commands::set_refresh_settings,
+            commands::get_app_behavior_settings,
+            commands::set_close_behavior,
+            commands::set_auto_start,
             commands::set_window_mode,
             commands::set_always_on_top,
+            commands::snap_window_to_work_area,
             commands::get_window_state,
             commands::get_migration_status,
             commands::get_layout,
@@ -165,10 +210,21 @@ fn switch_window_mode(app: &tauri::AppHandle, mode: crate::window_mode::WindowMo
 fn setup_close_to_tray(app: &tauri::App) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let win = window.clone();
+        let handle = app.handle().clone();
         window.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = win.hide();
+                let behavior = handle.state::<Db>();
+                let close_behavior = crate::settings::get_setting(
+                    &behavior,
+                    crate::settings::SETTING_CLOSE_BEHAVIOR,
+                )
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| "minimize_to_tray".to_string());
+                if close_behavior == "minimize_to_tray" {
+                    api.prevent_close();
+                    let _ = win.hide();
+                }
             }
         });
     }

@@ -29,14 +29,14 @@
 | TC-008 | P1 | 添加 SiliconFlow 账户 | 准备有效 SiliconFlow API Key | 选择 `siliconflow`，填写名称和 Key，使用预置 URL 后添加 | 添加成功；刷新后能展示余额；平台没有提供的字段显示“—”而不是伪造为 0 |
 | TC-009 | P1 | 添加 OpenAI 管理员账户 | 准备具备组织 Usage/Costs 权限的 OpenAI 管理员 Key | 1. 选择 `openai`；2. 查看权限提示；3. 填写名称与 Key；4. 添加并刷新 | 表单明确提示需要组织管理员权限；添加成功；刷新后展示实际 Token/费用数据，余额未知时显示“—” |
 | TC-010 | P1 | 普通 OpenAI 项目 Key 权限不足 | 准备无组织 Usage/Costs 权限的普通项目 Key | 添加账户后在总览刷新该账户 | 应用不崩溃；该账户卡片显示可读的 403/权限错误；其他账户数据不受影响 |
-| TC-011 | P0 | 使用已登录的 Codex CLI 添加 Codex | 本机已执行 `codex login` 且登录有效 | 1. 类型选 `codex`；2. 观察表单；3. 填写名称并添加；4. 刷新 | Base URL 使用固定官方地址且不可编辑；无需 API Key 输入；添加成功；刷新后显示 Codex 额度/重置信息或可用数据 |
-| TC-012 | P1 | Codex CLI 未登录或登录过期 | 本机无 `~/.codex/auth.json`，或凭据已失效 | 添加 Codex 账户并刷新 | 账户可保存；刷新失败时显示明确的登录/凭据错误，提示用户执行 `codex login`；不影响其他账户刷新 |
+| TC-011 | P0 | 使用已登录的 Codex CLI 添加 Codex | 本机已执行 `codex login` 且登录有效 | 1. 类型选 `codex`；2. 观察表单；3. 填写名称并添加；4. 刷新 | 无需 API Key 输入；仅运行 `codex login status`；显示在线状态但不读取或伪造额度 |
+| TC-012 | P1 | Codex CLI 未登录或登录过期 | `codex login status` 返回未登录 | 添加 Codex 账户并刷新 | 账户可保存；刷新失败时提示用户执行 `codex login`；不读取认证文件且不影响其他账户刷新 |
 | TC-013 | P1 | 添加 Claude 管理员账户 | 准备 Anthropic Organization Admin Key | 1. 类型选 `claude`；2. 确认管理员 Key 提示；3. 添加并刷新 | 添加成功；可展示组织用量和费用；余额不可用时显示“—”，不把后付费账户错误显示为余额 0 |
 | TC-014 | P1 | Provider 类型列表正确 | 无 | 打开类型下拉菜单，检查全部选项及顺序 | 仅出现当前已注册类型：`claude`、`codex`、`deepseek`、`openai`、`openrouter`、`siliconflow`；顺序稳定；不出现当前不可用的 `gemini` |
 | TC-015 | P1 | 类型下拉键盘操作 | 焦点位于类型下拉按钮 | 1. 按 Enter 打开；2. 用上下方向键循环；3. 用 Home/End 跳转；4. 用空格选中；5. 再打开并按 Esc | 焦点与高亮项同步；首尾可循环；选择后菜单关闭且焦点回到触发按钮；Esc 关闭菜单并归还焦点 |
 | TC-016 | P0 | 新增账户必填项校验 | 位于新增表单 | 依次尝试：名称为空、URL 为空、非 Codex 类型 Key 为空，然后点击“添加” | 不创建账户；分别出现清晰的必填错误；用户已输入的其他字段不被意外清空 |
-| TC-017 | P0 | 阻止不安全的远程 HTTP 地址 | 准备任意非 Codex 类型与测试 Key | 将 Base URL 填为 `http://example.com` 并添加 | 添加失败；提示仅允许 HTTPS，HTTP 仅限本机回环地址；账户列表不新增记录，Key 不应留下孤立凭据 |
-| TC-018 | P1 | 允许本机 HTTP 调试地址 | 本机启动兼容的 Mock 服务 | Base URL 分别使用 `http://localhost:端口` 或 `http://127.0.0.1:端口` 添加并刷新 | 地址校验通过并可创建账户；刷新请求发往本机服务；Mock 返回的数据被正确展示 |
+| TC-017 | P0 | 阻止不安全的远程 HTTP 地址 | 准备任意非 Codex 类型与测试 Key | 将 Base URL 填为 `http://example.com` 并添加 | 添加失败；提示仅允许 HTTPS；账户列表不新增记录，Key 不应留下孤立凭据 |
+| TC-018 | P1 | 阻止本机 HTTP 调试地址 | 本机启动兼容的 HTTP Mock 服务 | Base URL 使用 `http://localhost:端口` 或 `http://127.0.0.1:端口` 添加 | 地址校验失败；携带凭据的请求一律不允许明文 HTTP；测试服务应改用可信 HTTPS 证书 |
 | TC-019 | P0 | 编辑账户但不更换 API Key | 已有可正常刷新的非 Codex 账户 | 1. 点击“编辑”；2. 修改名称或 HTTPS URL；3. Key 留空；4. 保存；5. 刷新 | 修改成功；原 API Key 继续有效；名称/URL 更新；Key 留空不会清除或替换原凭据 |
 | TC-020 | P0 | 编辑账户并更换 API Key | 已有账户，准备另一个有效 Key | 1. 编辑账户；2. 输入新 Key；3. 保存并刷新 | 新 Key 生效；旧 Key 不再被该账户使用；设置列表和前端接口均不展示 Key 明文 |
 
@@ -96,4 +96,3 @@
 2. Provider 回归：TC-006～TC-020、TC-024～TC-030。
 3. 桌面体验回归：TC-031、TC-042～TC-050。
 4. 高级统计回归：TC-033～TC-041，优先使用固定 Mock 数据保证结果可重复。
-

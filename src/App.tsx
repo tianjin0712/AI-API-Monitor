@@ -7,6 +7,16 @@ import Dashboard from "./pages/Dashboard";
 import Settings from "./pages/Settings";
 import { DEFAULT_WIDGETS, parseLayout } from "./utils/layout";
 import type { DashboardWidget, Layout, WindowMode, WindowState } from "./types";
+import { BACKGROUND_EVENT, migrateLegacyBackground, readCustomBackground } from "./utils/customBackground";
+import {
+  LUOTIANYI_BACKGROUND_EVENT,
+  luotianyiBackgroundPath,
+  migrateLegacyAvatarGif,
+  readCustomLuotianyiBackground,
+} from "./utils/themeAssets";
+import { applyThemeTokens } from "./theme/applyTheme";
+import { MiuixTheme, NavigationBar, Scaffold } from "./components/miuix/Miuix";
+import { MonitorStoreProvider } from "./state/MonitorStore";
 
 type Page = "dashboard" | "settings";
 export type Theme = "dark" | "light";
@@ -18,37 +28,71 @@ const DEFAULT_LAYOUT: Layout = {
 };
 
 export default function App() {
+  return <MonitorStoreProvider><AppShell /></MonitorStoreProvider>;
+}
+
+function AppShell() {
   const [page, setPage] = useState<Page>("dashboard");
   const [mode, setMode] = useState<WindowMode>("full");
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   // P1：布局（theme + widgets）作为 App 级单一状态，一次读取、一次写入
   const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
+  const [customBackground, setCustomBackground] = useState(readCustomBackground);
+  const [customLuotianyiBackground, setCustomLuotianyiBackground] = useState(readCustomLuotianyiBackground);
+  const effectiveBackground = layout.visualTheme === "luotianyi"
+    ? (layout.luotianyiBackground === "custom-luotianyi-background"
+        ? customLuotianyiBackground ?? luotianyiBackgroundPath()
+        : luotianyiBackgroundPath(layout.luotianyiBackground))
+    : layout.visualTheme === "custom"
+      ? customBackground.image
+      : null;
   // 布局加载完成前禁止自动保存，防止默认布局覆盖用户已保存布局（P1 竞态）
   const [layoutLoaded, setLayoutLoaded] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "failed">("idle");
   const saveTimer = useRef<number | undefined>(undefined);
-  // 已应用的主题覆盖变量（用于清理）
-  const appliedOverridesRef = useRef<Record<string, string>>({});
-
   // 应用主题到 <html data-theme>（V0.3）+ 自定义色值覆盖（V1.0 主题分享）
   useEffect(() => {
+    applyThemeTokens(layout);
+  }, [layout]);
+
+  useEffect(() => {
+    void Promise.all([migrateLegacyBackground(), migrateLegacyAvatarGif()]).then(() => {
+      setCustomBackground(readCustomBackground());
+      window.dispatchEvent(new Event(BACKGROUND_EVENT));
+    });
+    const update = () => setCustomBackground(readCustomBackground());
+    const updateLuotianyi = () => setCustomLuotianyiBackground(readCustomLuotianyiBackground());
+    window.addEventListener(BACKGROUND_EVENT, update);
+    window.addEventListener(LUOTIANYI_BACKGROUND_EVENT, updateLuotianyi);
+    window.addEventListener("storage", update);
+    window.addEventListener("storage", updateLuotianyi);
+    return () => {
+      window.removeEventListener(BACKGROUND_EVENT, update);
+      window.removeEventListener(LUOTIANYI_BACKGROUND_EVENT, updateLuotianyi);
+      window.removeEventListener("storage", update);
+      window.removeEventListener("storage", updateLuotianyi);
+    };
+  }, []);
+
+  useEffect(() => {
     const el = document.documentElement;
-    el.dataset.theme = layout.theme;
-    window.localStorage.setItem("ai-monitor-theme", layout.theme);
-    // 清理旧覆盖变量后应用新的
-    for (const key of Object.keys(appliedOverridesRef.current)) {
-      el.style.removeProperty(`--color-${key}`);
+    el.classList.toggle("has-user-background", !!effectiveBackground);
+    if (layout.visualTheme === "custom" && customBackground.palette) {
+      el.style.setProperty("--user-bg-color-1", customBackground.palette.primary);
+      el.style.setProperty("--user-bg-color-2", customBackground.palette.secondary);
+    } else {
+      el.style.removeProperty("--user-bg-color-1");
+      el.style.removeProperty("--user-bg-color-2");
     }
-    appliedOverridesRef.current = layout.themeOverrides ?? {};
-    for (const [key, value] of Object.entries(appliedOverridesRef.current)) {
-      if (key && value) el.style.setProperty(`--color-${key}`, value);
-    }
-  }, [layout.theme, layout.themeOverrides]);
+    if (effectiveBackground) el.style.setProperty("--custom-background-image", `url("${effectiveBackground}")`);
+    else el.style.removeProperty("--custom-background-image");
+  }, [customBackground, effectiveBackground, layout.visualTheme]);
 
   // 启动：读取窗口状态 + 布局（theme/widgets）
   useEffect(() => {
     void api
       .getWindowState()
-      .then((s) => setMode(s.mode))
+      .then((s) => { setMode(s.mode); setAlwaysOnTop(s.alwaysOnTop); })
       .catch(() => {});
     void api
       .getLayout()
@@ -119,7 +163,7 @@ export default function App() {
 
   // ---- 小球模式 ----
   if (mode === "ball") {
-    return <MiniBall mode={mode} onExpand={() => void switchMode("full")} />;
+    return <MiniBall mode={mode} visualTheme={layout.visualTheme} avatarGif={layout.avatarGif} backgroundImage={effectiveBackground} floatingScrollMode={layout.floatingScrollMode} onSwitchMode={(next) => void switchMode(next)} onExpand={() => void switchMode("full")} />;
   }
 
   // ---- Mini 模式 ----
@@ -127,6 +171,11 @@ export default function App() {
     return (
       <MiniBall
         mode={mode}
+        visualTheme={layout.visualTheme}
+        avatarGif={layout.avatarGif}
+        backgroundImage={effectiveBackground}
+        floatingScrollMode={layout.floatingScrollMode}
+        onSwitchMode={(next) => void switchMode(next)}
         onExpand={() => void switchMode("full")}
         compact
       />
@@ -135,18 +184,29 @@ export default function App() {
 
   // ---- Full 模式 ----
   return (
-    <div
-      className="flex h-screen flex-col overflow-hidden"
-      style={{
-        background:
-          "radial-gradient(120% 90% at 50% 0%, rgba(108,140,255,0.10), transparent 60%), var(--color-surface)",
-      }}
-    >
-      <TitleBar
+    <MiuixTheme>
+    <div className={`app-shell h-screen overflow-hidden border ${effectiveBackground ? "custom-background-shell" : ""}`} style={effectiveBackground ? { background: "transparent" } : undefined}>
+    <Scaffold
+      topBar={<TitleBar
         onSwitchMode={(m) => void switchMode(m)}
         theme={layout.theme}
         onToggleTheme={toggleTheme}
-      />
+        alwaysOnTop={alwaysOnTop}
+        onToggleAlwaysOnTop={() => {
+          const next = !alwaysOnTop;
+          setAlwaysOnTop(next);
+          void api.setAlwaysOnTop(next).catch(() => setAlwaysOnTop(!next));
+        }}
+      />}
+      navigationBar={<NavigationBar
+        selected={page}
+        onSelect={(id) => setPage(id as Page)}
+        items={[
+          { id: "dashboard", label: "总览", icon: <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8.5h4V14H2zm8-6h4V14h-4zM2 2h4v3H2z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg> },
+          { id: "settings", label: "设置", icon: <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 5.7A2.3 2.3 0 1 0 8 10.3 2.3 2.3 0 0 0 8 5.7Zm0-3.9.8 1.4 1.6.4 1.4-.7 1.3 1.3-.7 1.4.4 1.6 1.4.8v1.8l-1.4.8-.4 1.6.7 1.4-1.3 1.3-1.4-.7-1.6.4-.8 1.4H7.2l-.8-1.4-1.6-.4-1.4.7-1.3-1.3.7-1.4-.4-1.6L1 8.9V7.1l1.4-.8.4-1.6-.7-1.4L3.4 2l1.4.7 1.6-.4.8-1.4Z" fill="none" stroke="currentColor" strokeWidth="1.15" strokeLinejoin="round" /></svg> },
+        ]}
+      />}
+    >
 
       {/* 布局保存状态（P1：失败可见，不静默） */}
       {saveState === "failed" && (
@@ -161,38 +221,20 @@ export default function App() {
         </div>
       )}
 
-      {/* 页面切换 */}
-      <nav className="mx-4 flex shrink-0 gap-1 rounded-xl border border-border/60 bg-white/[0.03] p-1">
-        {(
-          [
-            ["dashboard", "总览"],
-            ["settings", "设置"],
-          ] as [Page, string][]
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setPage(key)}
-            className={`flex-1 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
-              page === key
-                ? "bg-accent text-[#0b0e14]"
-                : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-3">
+      <main className="app-content min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {page === "dashboard" ? (
           <Dashboard
             widgets={layout.widgets}
+            visualTheme={layout.visualTheme}
+            avatarGif={layout.avatarGif}
             onWidgetsChange={updateWidgets}
           />
         ) : (
           <Settings layout={layout} onLayoutChange={updateLayout} />
         )}
       </main>
+    </Scaffold>
     </div>
+    </MiuixTheme>
   );
 }
