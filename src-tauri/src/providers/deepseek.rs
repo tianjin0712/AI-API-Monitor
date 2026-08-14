@@ -51,7 +51,19 @@ impl ProviderAdapter for DeepSeekProvider {
     ) -> Result<ProviderUsage, ProviderError> {
         let client = crate::security::secure_http_client(15)
             .map_err(|e| ProviderError::Http(e.to_string()))?;
+        self.fetch_usage_with_client(config, api_key, &client).await
+    }
+}
 
+impl DeepSeekProvider {
+    /// 可注入 HTTP 客户端的查询实现：生产路径由 [`ProviderAdapter::fetch_usage`]
+    /// 传入安全客户端调用；测试通过本地 Mock 服务器 + 测试客户端直接调用。
+    pub(crate) async fn fetch_usage_with_client(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        client: &reqwest::Client,
+    ) -> Result<ProviderUsage, ProviderError> {
         let url = format!("{}/user/balance", config.api_url.trim_end_matches('/'));
         let resp = client
             .get(&url)

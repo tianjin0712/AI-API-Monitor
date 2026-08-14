@@ -95,7 +95,18 @@ impl ProviderAdapter for ClaudeProvider {
     ) -> Result<ProviderUsage, ProviderError> {
         let client = crate::security::secure_http_client(20)
             .map_err(|e| ProviderError::Http(e.to_string()))?;
+        self.fetch_usage_with_client(config, api_key, &client).await
+    }
+}
 
+impl ClaudeProvider {
+    /// 可注入 HTTP 客户端的查询实现（测试用 Mock 服务器；生产走安全客户端）。
+    pub(crate) async fn fetch_usage_with_client(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        client: &reqwest::Client,
+    ) -> Result<ProviderUsage, ProviderError> {
         let now = chrono::Utc::now();
         let start = now - chrono::Duration::days(30);
         let base = config.api_url.trim_end_matches('/');
@@ -110,8 +121,8 @@ impl ProviderAdapter for ClaudeProvider {
             format!("{base}/organizations/cost_report?starting_at={start_s}&ending_at={end_s}&bucket_width=1d");
 
         let (usage_resp, cost_resp) = tokio::join!(
-            fetch_with_pagination::<UsageResponse>(&client, &usage_base, api_key),
-            fetch_with_pagination::<CostResponse>(&client, &cost_base, api_key),
+            fetch_with_pagination::<UsageResponse>(client, &usage_base, api_key),
+            fetch_with_pagination::<CostResponse>(client, &cost_base, api_key),
         );
         let usage_data = usage_resp?;
         let cost_data = cost_resp?;

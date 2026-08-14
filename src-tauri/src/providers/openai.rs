@@ -98,7 +98,18 @@ impl ProviderAdapter for OpenAIProvider {
             crate::security::secure_http_client(20)
                 .map_err(|e| ProviderError::Http(e.to_string()))?
         };
+        self.fetch_usage_with_client(config, api_key, &client).await
+    }
+}
 
+impl OpenAIProvider {
+    /// 可注入 HTTP 客户端的查询实现（测试用 Mock 服务器；生产走安全客户端）。
+    pub(crate) async fn fetch_usage_with_client(
+        &self,
+        config: &ProviderConfig,
+        api_key: &str,
+        client: &reqwest::Client,
+    ) -> Result<ProviderUsage, ProviderError> {
         // 近 30 天（按天 bucket）
         let now = chrono::Utc::now();
         let start = now - chrono::Duration::days(30);
@@ -117,8 +128,8 @@ impl ProviderAdapter for OpenAIProvider {
 
         // 并行请求两个端点（均带分页，P2）
         let (usage_data, costs_data) = tokio::join!(
-            fetch_usage_pages(&client, &usage_base, api_key),
-            fetch_costs_pages(&client, &costs_base, api_key),
+            fetch_usage_pages(client, &usage_base, api_key),
+            fetch_costs_pages(client, &costs_base, api_key),
         );
         let usage_data = usage_data?;
         let costs_data = costs_data?;

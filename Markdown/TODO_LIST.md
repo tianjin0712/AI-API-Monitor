@@ -9,7 +9,7 @@
 ## 一、发布前必须完成
 
 - [x] 在当前目标目录重新安装依赖：`pnpm install --frozen-lockfile`。2026-08-14 验证通过（含删除 node_modules 后的全新重建，lockfile 与声明一致）。
-- [x] 执行 `pnpm check`，确认 TypeScript、Vitest、Rust fmt、Clippy 和 Rust 测试全部通过。2026-08-14 复现通过：前端 15 项、Rust 93 项全绿（此前记录的“依赖重建 ENOENT、类型库路径缺失”已定位根因，见第十四节）。
+- [x] 执行 `pnpm check`，确认 TypeScript、Vitest、Rust fmt、Clippy 和 Rust 测试全部通过。2026-08-14 复现通过：前端 15 项、Rust 136 项全绿（93 项基线 + 43 项新增 HTTP Mock 合约测试；此前记录的“依赖重建 ENOENT、类型库路径缺失”已定位根因，见第十四节）。
 - [x] 执行 `pnpm build`，确认生产构建成功。2026-08-14 验证通过（tsc + vite build，56 模块，dist 产物正常）。
 - [x] 安装并执行 `cargo-audit` / `pnpm security:audit`。2026-08-14 验证通过：JS 依赖 0 漏洞；Rust 扫描 591 个依赖 0 漏洞、17 条允许的传递依赖 warning（非漏洞，不阻塞）。
 - [ ] 完成 Windows 真实 Tauri 桌面环境冒烟测试。
@@ -39,9 +39,9 @@
 
 ## 四、Provider 与网络测试
 
-- [ ] 建立 Provider HTTP Mock 合约测试基础设施。状态：部分完成；已有解析、分页和错误纯函数测试，缺少 HTTP 层 Mock。
-- [ ] 为各 Provider 覆盖成功响应、401/403、429、5xx、超时和网络中断。状态：部分完成。
-- [ ] 覆盖非 JSON、字段缺失、分页、NaN、负数和协议变化。状态：部分完成；分页、非法数值和字段缺失已有部分覆盖。
+- [x] 建立 Provider HTTP Mock 合约测试基础设施。2026-08-14 落地：`src-tauri/src/providers/test_http.rs`（本地脚本化 Mock 服务器：状态码/头/体/延迟/断连/路径绑定/请求记录）+ `http_contract_tests.rs`（43 项合约测试）；生产安全客户端不变，仅新增 `#[cfg(test)]` 测试客户端与 `fetch_usage_with_client` 注入点。
+- [x] 为各 Provider 覆盖成功响应、401/403、429、5xx、超时和网络中断。2026-08-14：DeepSeek/OpenRouter/SiliconFlow/Claude/OpenAI 五个 HTTP Provider 已按该矩阵全覆盖（Codex 为 CLI 通道，无 HTTP 端点）；真实账户权限行为仍需真机验证。
+- [x] 覆盖非 JSON、字段缺失、分页、NaN、负数和协议变化。2026-08-14：非 JSON 与字段缺失由 HTTP Mock 覆盖（含 SiliconFlow 余额缺失显式报错、OpenRouter 可选字段缺失）；分页由 Claude/OpenAI 双页聚合与重复 cursor 测试覆盖；NaN/负费用由 `validate_cost`/`parse_cents` 纯函数测试覆盖。协议变化（字段缺失/格式非法）已覆盖。
 - [ ] 验证 OpenAI Organization Usage/Costs 的管理员权限和分页行为。
 - [ ] 验证 Claude 管理员接口和费用/余额缺失时的展示逻辑。
 - [ ] 验证 Codex CLI 未登录、登录过期和接口变化时的错误提示。
@@ -196,3 +196,13 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
   4. `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
 - 复跑环境变化：机器重启导致 `/tmp` 工具链（pnpm/Rust/cargo-audit）被清空，已按 rsproxy 镜像重建（rustup 1.29.0 + Rust 1.97.1 + clippy/rustfmt + cargo-audit 0.22.2）；仓库内混入从 Windows 同步回来的 `node_modules`（win32 原生二进制）与 5.3GB `src-tauri/target`（x86_64-pc-windows-msvc 产物）已清理（均为 gitignore 目录，不影响版本库）。
 - 验证方式与残余项不变：完整链路在内容与仓库完全一致的 APFS 卷副本上冷启动单次连续通过（`diff -rq` 确认无差异）；NTFS/Tuxera 驱动不稳定仍是唯一环境级阻塞（非代码问题），Windows 端已在台式机实跑通过，与 CI（windows-latest）口径一致。
+
+## 十四之三、质量门禁验证记录（2026-08-14，Provider HTTP Mock 合约测试落地）
+
+在 HEAD 新增 Provider HTTP Mock 合约测试（`providers/test_http.rs` + `providers/http_contract_tests.rs`，43 项）后，完整四门禁复跑通过：
+
+- `pnpm install --frozen-lockfile` —— 通过（lockfile 与声明一致）
+- `pnpm check` —— 通过（tsc ✓、Vitest 15/15 ✓、cargo fmt --check ✓、clippy -D warnings ✓、cargo test **136/136** ✓，两次连续运行稳定）
+- `pnpm build` —— 通过（tsc && vite build，56 模块，dist 正常）
+- `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
+- 验证方式同上：APFS 卷副本（内容与仓库一致，`diff -rq` 无源码差异）冷启动单次连续全过；生产安全策略未被放宽（测试客户端仅 `#[cfg(test)]`，`fetch_usage_with_client` 为纯注入点，生产路径仍走 `secure_http_client`）。

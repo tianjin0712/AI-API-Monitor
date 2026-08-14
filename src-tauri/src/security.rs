@@ -78,6 +78,17 @@ pub fn secure_http_client(timeout_secs: u64) -> Result<reqwest::Client, reqwest:
         .build()
 }
 
+/// 测试专用 HTTP 客户端（仅测试构建）：允许 `http://` 与回环地址，
+/// 用于把 Provider 请求指向本地 Mock 服务器；生产路径不使用，未放宽任何生产配置。
+#[cfg(test)]
+pub fn insecure_test_http_client(timeout_secs: u64) -> Result<reqwest::Client, reqwest::Error> {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_secs))
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .build()
+}
+
 pub fn custom_endpoint_origin(endpoint: &str) -> Result<String, String> {
     let url = url::Url::parse(endpoint).map_err(|_| "自定义网关 URL 无效".to_string())?;
     if url.scheme() != "https" {

@@ -18,6 +18,12 @@ pub mod openai;
 pub mod openrouter;
 pub mod siliconflow;
 
+#[cfg(test)]
+pub(crate) mod test_http;
+
+#[cfg(test)]
+pub(crate) mod http_contract_tests;
+
 /// 统一返回给前端的 Provider 用量数据（对应 mission.md 的 ProviderUsage 接口）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
