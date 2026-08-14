@@ -46,4 +46,17 @@ describe("getPredictionUnavailableReason", () => {
       }),
     ).toContain("日均消耗为 0");
   });
+
+  it("explains missing daysLeft when everything else is sufficient", () => {
+    expect(
+      getPredictionUnavailableReason({
+        ...validPrediction,
+        daysLeft: null,
+      }),
+    ).toContain("数据不足");
+  });
+
+  it("returns null for a null prediction", () => {
+    expect(getPredictionUnavailableReason(null)).toBeNull();
+  });
 });

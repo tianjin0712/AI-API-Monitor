@@ -51,13 +51,13 @@
 
 ## 五、前端功能与自动化测试
 
-- [ ] 补充 Dashboard 刷新、单飞控制和刷新竞态测试。
-- [ ] 补充 TrendWidget 趋势刷新、预测降级和无效数据测试。
-- [ ] 补充 Settings 表单校验、凭据编辑和保存失败重试测试。
-- [ ] 补充刷新间隔 fake timer 测试。
+- [x] 补充 Dashboard 刷新、单飞控制和刷新竞态测试。2026-08-14：从 `MonitorStore` 提取 `src/state/refreshLogic.ts` 纯函数并新增 17 项测试（前台/后台间隔钳制、结果合并、单飞/失败判定、刷新状态机）；组件级渲染交互仍需桌面 E2E。
+- [ ] 补充 TrendWidget 趋势刷新、预测降级和无效数据测试。状态：预测降级/无效数据分支已补（`prediction.test.ts` 现 6 项，覆盖 daysLeft 缺失与 null 输入）；TrendWidget 组件级趋势刷新仍需 E2E。
+- [ ] 补充 Settings 表单校验、凭据编辑和保存失败重试测试。状态：未开始。
+- [x] 补充刷新间隔 fake timer 测试。2026-08-14：`computeRefreshIntervalSecs`（前台最小 10s、后台最小 60s、可见性切换）已覆盖；调度 Effect 本身需组件测试环境。
 - [ ] 补充布局解析、布局防抖、拖拽排序和恢复默认测试。状态：部分完成；布局解析已有测试，交互和失败重试仍缺。
 - [ ] 补充托盘事件同步和桌面 E2E 测试。
-- [ ] 完善主题切换和主题持久化验证。
+- [ ] 完善主题切换和主题持久化验证。状态：主题资源 id/路径映射与自定义资源安全回退已测（`themeAssets.test.ts` 10 项，含非安全 URL fail-closed）；主题切换/持久化交互仍需 E2E。
 - [x] 完善统一 Dropdown 的方向键、Home/End、Escape 和 ARIA 基础支持。`AppSelect` 已被 Provider、设置和趋势控件复用；仍需运行时无障碍验证。
 
 ## 六、DIY UI 与布局系统
@@ -206,3 +206,13 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 - `pnpm build` —— 通过（tsc && vite build，56 模块，dist 正常）
 - `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
 - 验证方式同上：APFS 卷副本（内容与仓库一致，`diff -rq` 无源码差异）冷启动单次连续全过；生产安全策略未被放宽（测试客户端仅 `#[cfg(test)]`，`fetch_usage_with_client` 为纯注入点，生产路径仍走 `secure_http_client`）。
+
+## 十四之四、质量门禁验证记录（2026-08-14，前端自动化测试补充）
+
+新增前端测试（`refreshLogic.test.ts` 17 项、`format.test.ts` 10 项、`themeAssets.test.ts` 10 项、`prediction.test.ts` 扩至 6 项；`MonitorStore` 提取 `refreshLogic.ts` 纯函数，行为不变）后，完整四门禁复跑通过：
+
+- `pnpm install --frozen-lockfile` —— 通过（lockfile 与声明一致）
+- `pnpm check` —— 通过（tsc ✓、Vitest **54/54**（6 个文件）✓、cargo fmt --check ✓、clippy -D warnings ✓、cargo test 136/136 ✓）
+- `pnpm build` —— 通过（tsc && vite build，56 模块，dist 正常）
+- `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
+- 验证方式同上：APFS 卷副本（内容与仓库一致）冷启动单次连续全过。

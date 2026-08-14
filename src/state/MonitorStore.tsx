@@ -2,6 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import type { ProviderConfig, ProviderUsage, RefreshSettings } from "../types";
+import {
+  computeRefreshIntervalSecs,
+  mergeErrorResults,
+  mergeUsageResults,
+  nextRefreshState,
+  refreshSucceeded,
+} from "./refreshLogic";
 
 export type RefreshState = "idle" | "refreshing" | "success" | "error";
 
@@ -53,28 +60,12 @@ export function MonitorStoreProvider({ children }: { children: ReactNode }) {
     setRefreshState("refreshing");
     try {
       const list = await api.refreshAll();
-      let succeeded = false;
-      setUsages((current) => {
-        const next = { ...current };
-        for (const result of list) {
-          if (result.success && result.usage?.providerId != null) {
-            next[result.usage.providerId] = result.usage;
-            succeeded = true;
-          }
-        }
-        return next;
-      });
-      setErrors((current) => {
-        const next = { ...current };
-        for (const result of list) {
-          if (result.success) delete next[result.providerId];
-          else next[result.providerId] = result.error ?? "刷新失败";
-        }
-        return next;
-      });
+      setUsages((current) => mergeUsageResults(current, list));
+      setErrors((current) => mergeErrorResults(current, list));
       setLastUpdated(Date.now());
+      const succeeded = refreshSucceeded(list);
       if (succeeded) setHistoryRevision((value) => value + 1);
-      setRefreshState(list.some((result) => !result.success) && !succeeded ? "error" : "success");
+      setRefreshState(nextRefreshState(list));
     } catch (error) {
       setRefreshState("error");
       setErrors((current) => ({ ...current, _global: String(error) }));
@@ -152,9 +143,11 @@ export function MonitorStoreProvider({ children }: { children: ReactNode }) {
   }, [reloadProviders]);
 
   useEffect(() => {
-    const intervalOf = () => (document.visibilityState === "visible"
-      ? Math.max(refreshSettings.foregroundSecs, 10)
-      : Math.max(refreshSettings.backgroundSecs, 60)) * 1000;
+    const intervalOf = () =>
+      computeRefreshIntervalSecs(
+        refreshSettings,
+        document.visibilityState === "visible",
+      ) * 1000;
     let timer: number | undefined;
     const tick = () => { void refreshAllRef.current(false); timer = window.setTimeout(tick, intervalOf()); };
     timer = window.setTimeout(tick, intervalOf());
