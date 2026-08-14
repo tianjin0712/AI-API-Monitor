@@ -5,13 +5,14 @@
 > 审计日期：2026-08-14  
 > 平台优先级：**优先在 Windows 台式机（i5-13600KF + RTX 4070）上运行与优化，验证通过后再复刻到 macOS 端**。CI（`.github/workflows/quality.yml`）即跑在 `windows-latest`，与主平台一致；macOS 本地跑通是次一级的交叉验证。  
 > 说明：本清单以当前代码、测试结果、Git 历史和 Markdown 文档为准；仅有文档或历史对话声明的任务不会直接勾选。
+> 完成时间规范：每个已勾选条目备注完成时间（YYYY-MM-DD HH:MM，以 git 提交时间/验证记录时间为准），后续每完成一项即同步勾选并补时间。
 
 ## 一、发布前必须完成
 
-- [x] 在当前目标目录重新安装依赖：`pnpm install --frozen-lockfile`。2026-08-14 验证通过（含删除 node_modules 后的全新重建，lockfile 与声明一致）。
-- [x] 执行 `pnpm check`，确认 TypeScript、Vitest、Rust fmt、Clippy 和 Rust 测试全部通过。2026-08-14 复现通过：前端 15 项、Rust 136 项全绿（93 项基线 + 43 项新增 HTTP Mock 合约测试；此前记录的“依赖重建 ENOENT、类型库路径缺失”已定位根因，见第十四节）。
-- [x] 执行 `pnpm build`，确认生产构建成功。2026-08-14 验证通过（tsc + vite build，56 模块，dist 产物正常）。
-- [x] 安装并执行 `cargo-audit` / `pnpm security:audit`。2026-08-14 验证通过：JS 依赖 0 漏洞；Rust 扫描 591 个依赖 0 漏洞、17 条允许的传递依赖 warning（非漏洞，不阻塞）。
+- [x] 在当前目标目录重新安装依赖：`pnpm install --frozen-lockfile`。2026-08-14 19:22 验证通过（含删除 node_modules 后的全新重建，lockfile 与声明一致）。
+- [x] 执行 `pnpm check`，确认 TypeScript、Vitest、Rust fmt、Clippy 和 Rust 测试全部通过。2026-08-14 19:59 复现通过：前端 58 项、Rust 136 项全绿（93 基线 + 43 HTTP Mock + 39 前端 + 4 Widget 新增；此前记录的“依赖重建 ENOENT、类型库路径缺失”已定位根因，见第十四节）。
+- [x] 执行 `pnpm build`，确认生产构建成功。2026-08-14 19:22 验证通过（tsc + vite build，56 模块，dist 产物正常）。
+- [x] 安装并执行 `cargo-audit` / `pnpm security:audit`。2026-08-14 19:22 验证通过：JS 依赖 0 漏洞；Rust 扫描 591 个依赖 0 漏洞、17 条允许的传递依赖 warning（非漏洞，不阻塞）。
 - [ ] 完成 Windows 真实 Tauri 桌面环境冒烟测试。
 - [ ] 完成 Provider 真实接口和权限行为验证。
 - [ ] 配置自动更新签名公钥、HTTPS 更新地址和签名产物。
@@ -39,9 +40,9 @@
 
 ## 四、Provider 与网络测试
 
-- [x] 建立 Provider HTTP Mock 合约测试基础设施。2026-08-14 落地：`src-tauri/src/providers/test_http.rs`（本地脚本化 Mock 服务器：状态码/头/体/延迟/断连/路径绑定/请求记录）+ `http_contract_tests.rs`（43 项合约测试）；生产安全客户端不变，仅新增 `#[cfg(test)]` 测试客户端与 `fetch_usage_with_client` 注入点。
-- [x] 为各 Provider 覆盖成功响应、401/403、429、5xx、超时和网络中断。2026-08-14：DeepSeek/OpenRouter/SiliconFlow/Claude/OpenAI 五个 HTTP Provider 已按该矩阵全覆盖（Codex 为 CLI 通道，无 HTTP 端点）；真实账户权限行为仍需真机验证。
-- [x] 覆盖非 JSON、字段缺失、分页、NaN、负数和协议变化。2026-08-14：非 JSON 与字段缺失由 HTTP Mock 覆盖（含 SiliconFlow 余额缺失显式报错、OpenRouter 可选字段缺失）；分页由 Claude/OpenAI 双页聚合与重复 cursor 测试覆盖；NaN/负费用由 `validate_cost`/`parse_cents` 纯函数测试覆盖。协议变化（字段缺失/格式非法）已覆盖。
+- [x] 建立 Provider HTTP Mock 合约测试基础设施。2026-08-14 19:49 落地：`src-tauri/src/providers/test_http.rs`（本地脚本化 Mock 服务器：状态码/头/体/延迟/断连/路径绑定/请求记录）+ `http_contract_tests.rs`（43 项合约测试）；生产安全客户端不变，仅新增 `#[cfg(test)]` 测试客户端与 `fetch_usage_with_client` 注入点。
+- [x] 为各 Provider 覆盖成功响应、401/403、429、5xx、超时和网络中断。2026-08-14 19:49：DeepSeek/OpenRouter/SiliconFlow/Claude/OpenAI 五个 HTTP Provider 已按该矩阵全覆盖（Codex 为 CLI 通道，无 HTTP 端点）；真实账户权限行为仍需真机验证。
+- [x] 覆盖非 JSON、字段缺失、分页、NaN、负数和协议变化。2026-08-14 19:49：非 JSON 与字段缺失由 HTTP Mock 覆盖（含 SiliconFlow 余额缺失显式报错、OpenRouter 可选字段缺失）；分页由 Claude/OpenAI 双页聚合与重复 cursor 测试覆盖；NaN/负费用由 `validate_cost`/`parse_cents` 纯函数测试覆盖。协议变化（字段缺失/格式非法）已覆盖。
 - [ ] 验证 OpenAI Organization Usage/Costs 的管理员权限和分页行为。
 - [ ] 验证 Claude 管理员接口和费用/余额缺失时的展示逻辑。
 - [ ] 验证 Codex CLI 未登录、登录过期和接口变化时的错误提示。
@@ -51,19 +52,19 @@
 
 ## 五、前端功能与自动化测试
 
-- [x] 补充 Dashboard 刷新、单飞控制和刷新竞态测试。2026-08-14：从 `MonitorStore` 提取 `src/state/refreshLogic.ts` 纯函数并新增 17 项测试（前台/后台间隔钳制、结果合并、单飞/失败判定、刷新状态机）；组件级渲染交互仍需桌面 E2E。
+- [x] 补充 Dashboard 刷新、单飞控制和刷新竞态测试。2026-08-14 19:57：从 `MonitorStore` 提取 `src/state/refreshLogic.ts` 纯函数并新增 17 项测试（前台/后台间隔钳制、结果合并、单飞/失败判定、刷新状态机）；组件级渲染交互仍需桌面 E2E。
 - [ ] 补充 TrendWidget 趋势刷新、预测降级和无效数据测试。状态：预测降级/无效数据分支已补（`prediction.test.ts` 现 6 项，覆盖 daysLeft 缺失与 null 输入）；TrendWidget 组件级趋势刷新仍需 E2E。
 - [ ] 补充 Settings 表单校验、凭据编辑和保存失败重试测试。状态：未开始。
-- [x] 补充刷新间隔 fake timer 测试。2026-08-14：`computeRefreshIntervalSecs`（前台最小 10s、后台最小 60s、可见性切换）已覆盖；调度 Effect 本身需组件测试环境。
+- [x] 补充刷新间隔 fake timer 测试。2026-08-14 19:57：`computeRefreshIntervalSecs`（前台最小 10s、后台最小 60s、可见性切换）已覆盖；调度 Effect 本身需组件测试环境。
 - [ ] 补充布局解析、布局防抖、拖拽排序和恢复默认测试。状态：部分完成；布局解析已有测试，交互和失败重试仍缺。
 - [ ] 补充托盘事件同步和桌面 E2E 测试。
-- [ ] 完善主题切换和主题持久化验证。状态：主题资源 id/路径映射与自定义资源安全回退已测（`themeAssets.test.ts` 10 项，含非安全 URL fail-closed）；主题切换/持久化交互仍需 E2E。
+- [ ] 完善主题切换和主题持久化验证。状态：主题资源 id/路径映射与自定义资源安全回退2026-08-14 19:57 已测（`themeAssets.test.ts` 10 项，含非安全 URL fail-closed）；主题切换/持久化交互仍需 E2E。
 - [x] 完善统一 Dropdown 的方向键、Home/End、Escape 和 ARIA 基础支持。`AppSelect` 已被 Provider、设置和趋势控件复用；仍需运行时无障碍验证。
 
 ## 六、DIY UI 与布局系统
 
 - [ ] 设计版本化 Layout schema，支持向前兼容。
-- [x] 支持 Widget 删除、添加和恢复默认。2026-08-14：编辑模式新增「删除」按钮与「添加 Widget」下拉（`AppSelect` + 四类可选，每类最多一个实例，id 由 `nextWidgetId` 保证不冲突）；恢复默认沿用既有按钮；拖拽排序与显示/隐藏维持原有行为。布局经 `onWidgetsChange` 统一持久化。新增 `nextWidgetId` 纯函数测试 4 项（Vitest 58/58）。
+- [x] 支持 Widget 删除、添加和恢复默认。2026-08-14 19:59：编辑模式新增「删除」按钮与「添加 Widget」下拉（`AppSelect` + 四类可选，每类最多一个实例，id 由 `nextWidgetId` 保证不冲突）；恢复默认沿用既有按钮；拖拽排序与显示/隐藏维持原有行为。布局经 `onWidgetsChange` 统一持久化。新增 `nextWidgetId` 纯函数测试 4 项（Vitest 58/58）。
 - [ ] 支持 Widget 自由定位和尺寸调整。
 - [ ] 支持透明度、圆角、字体大小、字体和颜色编辑。
 - [ ] 支持完整的 Widget 布局保存、加载和失败恢复。
@@ -154,7 +155,7 @@
   2. 建立 Provider HTTP Mock 合约测试并执行真实权限/错误场景验证。
   3. 完成 updater 签名配置、跨平台凭据库测试和发布前安全手工检查。
 
-## 十四、质量门禁验证记录（2026-08-14）
+## 十四、质量门禁验证记录（2026-08-14 19:22）
 
 验证日期：2026-08-14。环境：macOS（arm64）、Node v26.7.0、pnpm 11.21.0、Rust 1.97.1（clippy + rustfmt）。
 
@@ -185,7 +186,7 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 - `cargo audit` 17 条 warning（全部为传递依赖“unmaintained/unsound”，无漏洞），与 CI 一致（`cargo audit --file` 默认不因 warning 失败）。
 - 工作区所在 NTFS 卷的 Tuxera 驱动不稳定是当前唯一环境级阻塞（建议迁移到 APFS 卷或修复驱动后原地复跑确认）。
 
-## 十四之二、质量门禁复跑记录（2026-08-14，基线提交 081940b）
+## 十四之二、质量门禁复跑记录（2026-08-14 19:32，基线提交 081940b）
 
 在提交 `081940b`（质量门禁基线）之后对当前 HEAD 完整复跑，结果与首次验证一致：
 
@@ -197,7 +198,7 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 - 复跑环境变化：机器重启导致 `/tmp` 工具链（pnpm/Rust/cargo-audit）被清空，已按 rsproxy 镜像重建（rustup 1.29.0 + Rust 1.97.1 + clippy/rustfmt + cargo-audit 0.22.2）；仓库内混入从 Windows 同步回来的 `node_modules`（win32 原生二进制）与 5.3GB `src-tauri/target`（x86_64-pc-windows-msvc 产物）已清理（均为 gitignore 目录，不影响版本库）。
 - 验证方式与残余项不变：完整链路在内容与仓库完全一致的 APFS 卷副本上冷启动单次连续通过（`diff -rq` 确认无差异）；NTFS/Tuxera 驱动不稳定仍是唯一环境级阻塞（非代码问题），Windows 端已在台式机实跑通过，与 CI（windows-latest）口径一致。
 
-## 十四之三、质量门禁验证记录（2026-08-14，Provider HTTP Mock 合约测试落地）
+## 十四之三、质量门禁验证记录（2026-08-14 19:49，Provider HTTP Mock 合约测试落地）
 
 在 HEAD 新增 Provider HTTP Mock 合约测试（`providers/test_http.rs` + `providers/http_contract_tests.rs`，43 项）后，完整四门禁复跑通过：
 
@@ -207,7 +208,7 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 - `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
 - 验证方式同上：APFS 卷副本（内容与仓库一致，`diff -rq` 无源码差异）冷启动单次连续全过；生产安全策略未被放宽（测试客户端仅 `#[cfg(test)]`，`fetch_usage_with_client` 为纯注入点，生产路径仍走 `secure_http_client`）。
 
-## 十四之四、质量门禁验证记录（2026-08-14，前端自动化测试补充）
+## 十四之四、质量门禁验证记录（2026-08-14 19:57，前端自动化测试补充）
 
 新增前端测试（`refreshLogic.test.ts` 17 项、`format.test.ts` 10 项、`themeAssets.test.ts` 10 项、`prediction.test.ts` 扩至 6 项；`MonitorStore` 提取 `refreshLogic.ts` 纯函数，行为不变）后，完整四门禁复跑通过：
 
