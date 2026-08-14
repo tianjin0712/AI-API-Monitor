@@ -184,3 +184,15 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 
 - `cargo audit` 17 条 warning（全部为传递依赖“unmaintained/unsound”，无漏洞），与 CI 一致（`cargo audit --file` 默认不因 warning 失败）。
 - 工作区所在 NTFS 卷的 Tuxera 驱动不稳定是当前唯一环境级阻塞（建议迁移到 APFS 卷或修复驱动后原地复跑确认）。
+
+## 十四之二、质量门禁复跑记录（2026-08-14，基线提交 081940b）
+
+在提交 `081940b`（质量门禁基线）之后对当前 HEAD 完整复跑，结果与首次验证一致：
+
+- 执行命令（严格按序）与最终结果：
+  1. `pnpm install --frozen-lockfile` —— 通过（仓库原位执行，2.9s；lockfile 与声明一致）
+  2. `pnpm check` —— 通过（tsc ✓、Vitest 15/15 ✓、cargo fmt ✓、clippy -D warnings ✓、cargo test 93/93 ✓）
+  3. `pnpm build` —— 通过（tsc && vite build，56 模块，dist 正常）
+  4. `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
+- 复跑环境变化：机器重启导致 `/tmp` 工具链（pnpm/Rust/cargo-audit）被清空，已按 rsproxy 镜像重建（rustup 1.29.0 + Rust 1.97.1 + clippy/rustfmt + cargo-audit 0.22.2）；仓库内混入从 Windows 同步回来的 `node_modules`（win32 原生二进制）与 5.3GB `src-tauri/target`（x86_64-pc-windows-msvc 产物）已清理（均为 gitignore 目录，不影响版本库）。
+- 验证方式与残余项不变：完整链路在内容与仓库完全一致的 APFS 卷副本上冷启动单次连续通过（`diff -rq` 确认无差异）；NTFS/Tuxera 驱动不稳定仍是唯一环境级阻塞（非代码问题），Windows 端已在台式机实跑通过，与 CI（windows-latest）口径一致。
