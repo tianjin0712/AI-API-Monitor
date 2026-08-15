@@ -217,3 +217,7 @@ pnpm security:audit               # 通过：pnpm audit --prod 0 漏洞；cargo 
 - `pnpm build` —— 通过（tsc && vite build，56 模块，dist 正常）
 - `pnpm security:audit` —— 通过（JS 0 漏洞；cargo audit 591 依赖 0 漏洞、17 条允许的传递依赖 warning）
 - 验证方式同上：APFS 卷副本（内容与仓库一致）冷启动单次连续全过。
+
+## 十五、Windows 启动器修复记录
+
+- [x] 修复 `Start_AI_API_Monitor.bat`（2026-08-15 14:48）：移除首行 UTF-8 BOM（`cmd.exe` 将 BOM 视为首行命令前缀，导致 `@echo off` 失效、全部命令被回显）；`:deps_missing` 由“提示后退出”改为自动执行 `call pnpm install --frozen-lockfile` 安装依赖（Windows 侧副本该分支曾因缺 `echo` 把提示当命令执行而报 `'录中执行：pnpm' is not recognized`），安装失败有明确错误指引；保持 `chcp 65001` 与 `call pnpm` 调用方式，行尾统一 CRLF、UTF-8 无 BOM。本改动为启动器脚本，不在 tsc/vitest/cargo 门禁路径内，四门禁不受影响。
