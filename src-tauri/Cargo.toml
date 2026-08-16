@@ -42,4 +42,4 @@ tauri-plugin-updater = "2.10.1"
 tauri-plugin-autostart = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_UI_WindowsAndMessaging"] }

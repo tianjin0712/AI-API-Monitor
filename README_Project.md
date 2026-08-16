@@ -52,6 +52,12 @@ pnpm build             # 前端生产构建
 
 `pnpm check` 已在 `.github/workflows/quality.yml` 中配置为 Windows CI 门禁。执行检查会生成 `src-tauri/target/`，`pnpm build` 会生成 `dist/`；两者均已被 Git 忽略。
 
+## Windows 用户发布
+
+普通用户请下载发布产物，而不是源码和 `Start_AI_API_Monitor.bat`。安装版或便携版均不要求 Node.js、pnpm、Rust、Cargo、Python 或 Git；发布说明、数据位置、更新预留和一键构建命令见 [docs/RELEASE.md](./docs/RELEASE.md)。
+
+Windows 安装版已完成实际安装验收；安装后应用启动、Provider 管理与刷新、主题资源、托盘/悬浮窗、设置持久化、开机自启和数据隔离均可正常使用。
+
 ## 运行时数据
 
 - SQLite 文件：Tauri 系统应用数据目录下的 `ai-api-monitor.db`。

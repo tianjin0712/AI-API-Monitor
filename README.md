@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。项目当前处于 V0.5/V1.0-alpha 之间：核心桌面能力和自动化测试已落地，发布、真实账户和 macOS 真机验证仍待完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。项目当前处于 V0.5/V1.0-alpha 之间：Windows 安装版已完成实际安装验收，macOS 真机验证与签名发布仍待完成。
 
 ## 项目简介
 
@@ -8,7 +8,13 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - **已支持 Provider**：DeepSeek、OpenAI、Codex、OpenRouter、Claude、SiliconFlow；Gemini 适配器保留但未注册（官方公开查询端点不足）。
 - **技术栈**：Tauri 2、Rust 2021、React 19、TypeScript、Vite 7、Tailwind CSS 4、SQLite（WAL/迁移）、reqwest、tokio、keyring。
 - **开发环境**：Node.js 20.19+（或 22.12+）、pnpm 11、Rust stable、对应平台的 Tauri WebView/构建工具。
-- **当前状态**：Windows 代码与测试基线可用；macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
+- **当前状态**：Windows 安装包已在实际安装环境验证，安装后全部现有功能可正常使用；macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
+
+## Windows 安装验收
+
+已完成 Windows 安装版实际验收：安装、启动、Dashboard、Provider 管理与刷新、主题资源、托盘与悬浮窗、设置持久化、开机自启及用户数据隔离均可正常使用。普通用户使用安装包时无需安装 Node.js、pnpm、Rust、Cargo、Python 或 Git。
+
+安装与发布流程见 [Windows 发布说明](./docs/RELEASE.md)。
 
 ## 当前完成内容
 
@@ -81,6 +87,8 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 
 ### 2026-08-16
 
+- Windows 安装版完成实际安装验收，现有功能安装后均可正常使用。
+- 发布方式改为普通用户安装版，并补充一键发布脚本、便携版说明、用户数据隔离与启动失败日志说明。
 - 悬浮窗逻辑与状态说明整理。
 - Tooltip 行为和边界定位文档化。
 - API 额度展示与 Codex App Server 读取方案补充。

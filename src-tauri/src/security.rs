@@ -9,8 +9,11 @@ use aes_gcm::{
 use rand::RngCore;
 use regex::{Captures, Regex};
 use std::sync::LazyLock;
+use std::sync::OnceLock;
 use std::time::Duration;
 use zeroize::Zeroizing;
+
+static LOG_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
 
 static SECRET_VALUE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -200,10 +203,27 @@ pub fn safe_http_status_error(status: reqwest::StatusCode) -> String {
 }
 
 pub fn safe_log(scope: &str, message: impl AsRef<str>) {
-    eprintln!(
+    let line = format!(
         "[{scope}] {}",
         SensitiveDataFilter::redact(message.as_ref())
     );
+    eprintln!("{line}");
+    if let Some(log_dir) = LOG_DIR.get() {
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join("application.log"))
+        {
+            let _ = writeln!(file, "{} {line}", chrono::Utc::now().to_rfc3339());
+        }
+    }
+}
+
+/// Configure the per-user log destination after Tauri has resolved its data directory.
+/// Failures are intentionally ignored: the original diagnostic still reaches stderr.
+pub fn configure_log_dir(log_dir: std::path::PathBuf) {
+    let _ = LOG_DIR.set(log_dir);
 }
 
 #[derive(Debug, thiserror::Error)]

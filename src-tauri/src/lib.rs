@@ -25,7 +25,7 @@ pub const MAIN_WINDOW: &str = "main";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    if let Err(error) = tauri::Builder::default()
         .register_uri_scheme_protocol("app-resource", |context, request| {
             assets::protocol_response(context.app_handle(), request)
         })
@@ -43,6 +43,7 @@ pub fn run() {
             let log_dir = data_dir.join("logs");
             std::fs::create_dir_all(&log_dir)?;
             platform_security::harden_private_path(&log_dir, true)?;
+            security::configure_log_dir(log_dir);
             let assets = assets::AssetStore::new(&data_dir)
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
             app.manage(assets);
@@ -131,7 +132,49 @@ pub fn run() {
             commands::install_update,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    {
+        report_startup_failure(&error.to_string());
+    }
+}
+
+/// Production builds have no console. Preserve a redacted startup diagnostic and show a
+/// clear user-facing error instead of silently exiting (for example, when a policy blocks
+/// access to the user data directory).
+fn report_startup_failure(error: &str) {
+    let message = security::SensitiveDataFilter::redact(error);
+    let fallback = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("AI API Monitor")
+        .join("logs");
+    if std::fs::create_dir_all(&fallback).is_ok() {
+        security::configure_log_dir(fallback.clone());
+        security::safe_log("startup", &message);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let text: Vec<u16> = format!(
+            "AI API Monitor 无法启动。请确认当前账户可访问应用数据目录。\n\n日志：{}",
+            fallback.join("application.log").display()
+        )
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+        let title: Vec<u16> = std::ffi::OsStr::new("AI API Monitor - 启动失败")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                windows_sys::Win32::UI::WindowsAndMessaging::MB_ICONERROR,
+            );
+        }
+    }
 }
 
 /// 系统托盘：菜单（模式切换/显示/隐藏/退出）+ 左键单击切换可见性（V0.2）。
