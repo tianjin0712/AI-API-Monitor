@@ -108,9 +108,9 @@ cargo test
 | `src-tauri/src/db/mod.rs` | SQLite schema 与迁移 |
 | `src-tauri/src/storage.rs` | 系统凭据库 |
 | `src-tauri/src/window_mode.rs` | Full/Mini/Ball 与几何持久化 |
-| [`TEST_CASES.md`](../Tests/TEST_CASES.md) | 50 条手工/集成测试用例 |
-| [`项目索引.md`](./项目索引.md) | Markdown 目录说明及完整结构、模块和资源索引 |
-| [`优化建议.md`](../CodeReview/优化建议.md) | 按优先级拆分的改进任务 |
+| [`TEST_CASES.md`](./Markdown/Development/TEST_CASES.md) | 50 条手工/集成测试用例 |
+| [`项目索引.md`](./Markdown/Development/项目索引.md) | Markdown 目录说明及完整结构、模块和资源索引 |
+| [`优化建议.md`](./Markdown/TODO/优化建议.md) | 按优先级拆分的改进任务 |
 
 ## 新增 Provider 的最小流程
 
@@ -118,11 +118,11 @@ cargo test
 2. 为响应解析、非法值和 URL 契约添加 Rust 单元测试。
 3. 在 `ProviderManager::new()` 注册类型。
 4. 在 `Settings.tsx` 增加默认 Base URL、无 Key 规则或权限提示（如需要）。
-5. 更新 `README.md`、`../Tests/TEST_CASES.md` 和项目索引。
+5. 更新 `README.md`、`Markdown/Development/TEST_CASES.md` 和项目索引。
 6. 使用 HTTP mock 验证成功、401/403、429、超时、非 JSON 与字段缺失。
 
 ## 后续计划
 
 已完成数据库启动错误传播、趋势刷新联动、预测降级提示、OpenRouter URL 归一化、工具链固定、前端单元测试基线与 CI。下一阶段优先建设 Provider HTTP mock 合约测试、可恢复的数据库故障界面、诊断日志与模块拆分。长期目标是稳定 Provider 接口、显式能力模型、完整 DIY UI 和数据备份/恢复。
 
-详细任务见 [`优化建议.md`](../CodeReview/优化建议.md)。
+详细任务见 [`优化建议.md`](./Markdown/TODO/优化建议.md)。

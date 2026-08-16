@@ -1,150 +1,113 @@
 # AI API Monitor
 
-实时监控 **OpenAI / DeepSeek / Codex / OpenRouter / Claude / SiliconFlow** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。项目当前处于 V0.5/V1.0-alpha 之间：核心桌面能力和自动化测试已落地，发布、真实账户和 macOS 真机验证仍待完成。
 
-> 定位：类似 GPU Monitor / Rainmeter / macOS Widget 的 AI 资源监控中心。
-> 项目方案详见 [`mission.md`](./mission.md)。
+## 项目简介
 
-## ✨ 功能
+- **定位**：类似 GPU Monitor / Rainmeter / macOS Widget 的 AI 资源监控中心。
+- **已支持 Provider**：DeepSeek、OpenAI、Codex、OpenRouter、Claude、SiliconFlow；Gemini 适配器保留但未注册（官方公开查询端点不足）。
+- **技术栈**：Tauri 2、Rust 2021、React 19、TypeScript、Vite 7、Tailwind CSS 4、SQLite（WAL/迁移）、reqwest、tokio、keyring。
+- **开发环境**：Node.js 20.19+（或 22.12+）、pnpm 11、Rust stable、对应平台的 Tauri WebView/构建工具。
+- **当前状态**：Windows 代码与测试基线可用；macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
 
-### V0.5 高级统计（V0.5-alpha）
+## 当前完成内容
 
-- ✅ 消耗趋势：SVG 折线图（Token / 费用切换 + 账户下拉），基于当日 Token（`today_tokens`）与真实费用样本
-- ✅ 费用预测：近 N 天有效费用样本日均 → 预计剩余天数 / 预计耗尽日期（含样本数与覆盖天数说明）
-- ✅ 自动提醒：额度 <30% 黄色 / <10% 红色（剩余百分比）；余额型平台按预测剩余天数兜底（<7 天黄 / <3 天红），系统通知
-- ⚠️ 已知限制：提醒仅对能提供剩余百分比或可预测的平台有效；历史趋势至少需多日刷新数据；系统通知首次使用需授权
+### UI 系统
 
-### V0.4 更多平台
+- Dashboard、Settings、ProviderCard、TitleBar、MiniBall、TrendWidget 和统一控件已实现。
+- Miuix/液态玻璃方向已落到 `src/styles/miuix.css`、`miuix-official.css` 和 `src/components/miuix/`：卡片、输入框、下拉框、Button、Switch、Tooltip 与焦点态使用统一 token。
+- Widget 支持排序、显示/隐藏、添加/删除（每类唯一实例），布局 JSON 持久化。
+- 待优化：完整 DIY（自由定位、缩放、透明度、字体/颜色）、真实桌面端触摸/拖动和多屏回归。
 
-- ✅ **OpenRouter**：余额（key 剩余额度）+ 今日/月度费用 + 重置时间（`/api/v1/key`）
-- ✅ **SiliconFlow（硅基流动）**：余额查询（`/user/info`；端点无官方文档页，实验性）
-- ✅ **Claude (Anthropic)**：组织级 Usage & Cost API（需 **Admin Key**，个人账户不可用；后付费无余额，仅用量/费用）
-- ❌ **Gemini**：官方无公开余额/用量查询端点（仅 AI Studio Billing 页），**暂不可添加**，请到 aistudio.google.com 查看
+### API 管理
 
-### V0.3 DIY UI（V0.3-alpha：排序 / 隐藏 / 双主题）
+- Provider CRUD、启用/禁用、逐账户刷新和全量刷新已由 Rust commands 与 `ProviderManager` 统一调度。
+- 当前适配器位于 `src-tauri/src/providers/`；HTTP 合约 Mock 与分页/错误分支测试已加入。
+- API Key 只写入系统凭据库（Windows Credential Manager / macOS Keychain），SQLite 仅保存唯一引用和脱敏 hint；日志统一脱敏。
+- 刷新间隔由后端校验：前台 10–3600 秒、后台 60–3600 秒，后台不能快于前台。
 
-- ✅ 主题系统：亮/暗主题切换（标题栏按钮），持久化并启动恢复
-- ✅ Widget 布局：账户列表 / 今日汇总 / 费用概览 三区块自由组合
-- ✅ 编辑模式：Widget 拖拽排序 + 显示/隐藏（布局 JSON 持久化）
+### Codex 支持
 
-> 注：缩放、透明度、圆角、字体/颜色等完整 DIY 能力属后续迭代（见路线图）。
+- 登录由官方 Codex/ChatGPT CLI 负责，应用只调用 `login` 和 `login status`，不读取 `auth.json`、Cookie、Token 或浏览器数据。
+- 额度读取使用官方运行时的 App Server stdio 通道，监听 `account/rateLimits/updated`，解析 primary/secondary 窗口、使用率、剩余率、重置时间及可用 token 字段。
+- 运行时解析支持桌面用户运行时、桌面安装、打包运行时和独立 CLI；后续需记录各版本 CLI 的兼容性，并等待稳定公开额度接口。
 
-### V0.2 桌面能力
+### 悬浮窗
 
-- ✅ 系统托盘：菜单（完整/Mini/小球模式、显示/隐藏/退出），左键单击切换窗口可见性
-- ✅ 窗口状态机：Full（完整 Dashboard）/ Mini（紧凑条）/ Ball（悬浮小球），可拖动、点击展开
-- ✅ Always On Top 置顶开关（持久化，启动自动恢复）
-- ✅ 关闭按钮隐藏到托盘（桌面工具惯例），托盘「退出」真退出
+代码内部名称为 `Full / Mini / Ball`，产品文档统一映射为：
 
-### V0.1 基础版本
+| 产品状态 | 代码状态 | 尺寸 | 交互 |
+|---|---|---:|---|
+| `MAIN` | `Full` | 460×720 | 完整 Dashboard、设置、Widget 编辑 |
+| `FLOAT_SQUARE` | `Ball` | 96×96 | 悬浮方块/小球，点击展开 |
+| `FLOAT_EXPANDED` | `Mini` | 280×96 | 紧凑状态条，可切换回主界面 |
 
-- ✅ 多 Provider 统一管理（DeepSeek、OpenAI、**Codex（ChatGPT 订阅额度）**；类型可扩展）
-- ✅ Codex：仅通过 `codex login status` 检测公开登录状态，不读取认证文件、Cookie 或 Token
-  - ⚠️ **实验性**：依赖 codex-cli 0.146.0 内部接口，OpenAI 未公开承诺该端点稳定性；
-    CLI 升级或服务端调整可能导致失效。Base URL 固定官方地址不可修改（防止本机凭证泄露）。
-- ✅ Dashboard 卡片：余额、Token 用量、今日消耗、更新时间、进度条、逐账户失败状态
-- ✅ Settings 页：添加 / 编辑 / 删除 API 账户
-- ✅ 刷新策略：前台 10s / 后台 60s / 手动刷新 / 窗口聚焦立即刷新（单飞防重叠）
-- ✅ API Key **加密保存**至系统凭据库（Windows Credential Manager / macOS Keychain），绝不明文落库，凭据引用唯一 ID
-- ✅ SQLite 历史用量记账（`usage_history` 单日口径，为日报/周报/月报铺路）
-- ✅ 无边框 + 透明窗口 + 深色毛玻璃 UI
+- 状态由 Rust `window_mode.rs` 管理，React 通过 `window-mode-changed` 同步；几何位置按模式保存。
+- 托盘支持模式切换、显示/隐藏、退出；Tooltip 使用独立窗口并进行屏幕边界夹紧。
+- 已解决：托盘切换与 React 状态不同步、Mini/Ball 位置持久化和 Tooltip 基础定位。
+- 当前问题：真实多屏、DPI 缩放、拖动/点击/双击冲突仍需 Windows/macOS 真机手测。
 
-## 🧱 技术栈
+### 主题系统
 
-| 层 | 技术 |
-|---|---|
-| 桌面框架 | [Tauri 2](https://tauri.app)（Rust 2.x / WebView2 / 内置托盘） |
-| 前端 | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
-| 后端 | Rust（rusqlite / reqwest / keyring / tokio / chrono / uuid） |
-| 数据 | SQLite（WAL，版本化迁移） |
+- 亮/暗主题、主题 token 和自定义颜色覆盖持久化于布局设置。
+- 支持用户背景/壁纸资源导入、裁剪、资源隔离、主题色提取与对比度调整；GIF/图片导入在后端进行格式、大小、帧数和 SVG 限制。
+- 自定义主题系统保留，后续可继续沿 Miuix 设计语言扩展分享/导入主题。
 
-## 📁 目录结构
+### 设置系统
 
-```
-├── src/                  # 前端（React + TS）
-│   ├── components/       #   TitleBar / ProviderCard / MiniBall
-│   ├── pages/            #   Dashboard / Settings
-│   ├── api.ts            #   invoke 封装
-│   └── types.ts          #   前后端共享类型
-├── src-tauri/            # 后端（Rust）
-│   ├── src/
-│   │   ├── db/           #   SQLite 连接 + 迁移
-│   │   ├── providers/    #   Provider 抽象 + 7 平台适配器（deepseek/openai/codex/openrouter/siliconflow/claude/gemini）
-│   │   ├── storage.rs    #   keyring 安全存储（uuid 凭据引用）
-│   │   ├── settings.rs   #   Provider CRUD + 设置
-│   │   ├── commands.rs   #   Tauri commands
-│   │   └── window_mode.rs#   Full/Mini/Ball 窗口状态机 + 置顶
-│   └── tauri.conf.json
-└── Markdown/Project/mission.md # 项目方案文档
-```
+- 已实现 Provider 添加/编辑/删除、刷新间隔、主题、Widget 布局、置顶、关闭行为、自动启动和更新检查入口。
+- 待完善：旧凭据迁移、删除失败恢复提示、诊断导出、数据库备份/恢复、自动更新生产公钥和端点。
 
-## 🚀 开发
+## TODO
 
-```bash
-pnpm install            # 安装依赖（含 @tauri-apps/cli）
-pnpm tauri dev          # 开发模式（热更新）
-pnpm tauri build        # 打包发布
+### 高优先级
 
-cargo test              # 后端单元测试（src-tauri 目录下）
-```
+- 在 Windows 与 macOS 真机完成窗口、托盘、通知、Keychain/Credential Manager 和多屏回归。
+- 为真实 Provider 账户补充权限、限流、分页、错误和 Codex CLI 版本兼容验证。
+- 配置自动更新生产公钥、HTTPS endpoint、签名产物，并完成篡改/降级验收。
 
-> 国内镜像已配置：crates.io（中科大 sparse）位于 `~/.cargo/config.toml`，npm 走 npmmirror。
+### 中优先级
 
-## 🔌 新增 Provider
+- 完成完整 DIY UI 与桌面 E2E 测试，覆盖拖动、Tooltip、DPI 和窗口恢复。
+- 增加旧凭据迁移、删除失败补偿、诊断导出及数据库备份/恢复。
+- 统一文档中的 Full/Mini/Ball 与 MAIN/FLOAT_SQUARE/FLOAT_EXPANDED 命名，减少产品层歧义。
 
-实现 `ProviderAdapter` trait 并在 `src-tauri/src/providers/mod.rs` 的
-`ProviderManager::new()` 注册即可，前端无需改动：
+### 低优先级
 
-```rust
-#[async_trait]
-impl ProviderAdapter for MyProvider {
-    async fn fetch_usage(&self, config: &ProviderConfig, api_key: &str)
-        -> Result<ProviderUsage, ProviderError> { /* ... */ }
-}
-```
+- Provider 插件化加载、主题分享、更多平台适配（Gemini 等）。
+- 更完整的日报/周报/月报、成本预测和跨设备配置同步。
 
-> 类型需在 `ProviderManager` 注册（白名单校验），URL 必须使用 HTTPS。
-> 特例：`codex` 类型无需 API Key——仅执行 Codex CLI 的公开登录状态检查，
-> 前端表单会隐藏 Key 输入（见 `NO_API_KEY_TYPES`）。
+## Changelog
 
-## 🔐 安全
+### 2026-08-16
 
-- API Key 仅存于系统凭据库（uuid 唯一引用），SQLite 只保存引用，前端不可见
-- 凭据写入/数据库操作带失败补偿回滚
-- 刷新间隔后端最终校验（前台 10–3600s / 后台 60–3600s / 后台 ≥ 前台）
-- 数据库位于系统 app data 目录（`com.aiapimonitor.desktop`）
+- 悬浮窗逻辑与状态说明整理。
+- Tooltip 行为和边界定位文档化。
+- API 额度展示与 Codex App Server 读取方案补充。
+- Miuix/液态玻璃 UI 重构方向归档。
+- Markdown 文档按 Architecture、UI、API、Development、Review、TODO、Archive 重新分类。
 
-## 📦 发布（V1.0-alpha）
+## 文档索引
 
-自动更新需要发布者在构建时配置签名与更新源（`tauri-plugin-updater` 已集成）：
+- [架构与历史方案](./Markdown/Architecture/mission.md)
+- [UI 状态与设计方向](./Markdown/UI/UI_Status.md)
+- [Provider 与安全矩阵](./Markdown/API/Provider_Matrix.md)
+- [开发指南](./README_Project.md) · [跨平台指南](./Markdown/Development/DEVELOPMENT_GUIDE.md)
+- [项目索引](./Markdown/Development/项目索引.md)
+- [当前 TODO](./Markdown/TODO/TODO.md) · [历史审查](./Markdown/Review/codereview.md)
+- [测试用例](./Markdown/Development/TEST_CASES.md) · [安全审计](./Markdown/API/Security_Audit_Report.md)
 
-> 当前仓库的 `pubkey` 与 `endpoints` 为占位空值，因此自动更新仅为集成骨架；发布包前必须完成下面的配置。
+## 开发命令
 
 ```bash
-# 1. 生成更新签名密钥（仅一次，妥善保管）
-npx tauri signer generate -w ~/.tauri/myapp.key
-
-# 2. 在 src-tauri/tauri.conf.json 的 app.updater 段填写：
-#    "endpoints": ["https://your-host/updates/{{target}}/{{arch}}/{{current_version}}"],
-#    "pubkey": "<上面生成的公钥>"
-
-# 3. 打包发布（Windows 生成 NSIS/MSI 安装包）
+pnpm install
+pnpm tauri dev
 pnpm tauri build
-
-# 4. 将安装包与生成的 .sig 签名文件上传到更新源服务器
+pnpm typecheck
+pnpm test
+pnpm rust:fmt
+pnpm rust:clippy
+pnpm rust:test
 ```
 
-未配置更新源时，应用内「检查更新」会提示"更新器未配置"；配置后即可正常检查/下载/安装。
-
-### 平台
-
-- Windows：NSIS 安装包（默认）与 MSI
-- macOS：DMG（需在 macOS 上执行构建并配置签名证书）
-- 发布 CI 参考 `.github/workflows/quality.yml`（质量检查）；正式发布流水线可按需扩展
-
-## 🗺️ 路线图
-
-- 完整 DIY UI（Widget 缩放 / 透明 / 圆角 / 字体 / 颜色 / 自由定位）
-- Codex Provider 官方化（依赖稳定公开接口替代内部端点）
-- 前端组件自动化测试与 HTTP mock 集成测试
-- 真实账户端到端验证记录
+Windows 可使用 `Start_AI_API_Monitor.bat`；macOS 请在 macOS 上安装 Rust、Node/pnpm 和 Xcode Command Line Tools 后执行同等 pnpm/Tauri 命令。不要把 Windows 绝对路径写入配置或脚本。
