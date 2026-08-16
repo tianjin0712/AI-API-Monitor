@@ -1,77 +1,150 @@
 # AI API Monitor
 
-## 项目简介
+实时监控 **OpenAI / DeepSeek / Codex / OpenRouter / Claude / SiliconFlow** 等 AI API 的 **Token 用量、余额、费用** 的跨平台桌面小工具。
 
-AI API Monitor 是一个基于 Tauri 2、React、TypeScript、Rust 和 SQLite 的跨平台桌面应用，用于集中查看多个 AI Provider 的余额、Token、费用、趋势、预测和提醒，并提供 Full/Mini/Ball 悬浮模式、主题与布局能力。
+> 定位：类似 GPU Monitor / Rainmeter / macOS Widget 的 AI 资源监控中心。
+> 项目方案详见 [`mission.md`](./mission.md)。
 
-## 当前功能
+## ✨ 功能
 
-- Provider 管理与刷新：Claude、Codex、DeepSeek、OpenAI、OpenRouter、SiliconFlow；Gemini 当前未注册。
-- 余额、Token、费用、历史趋势、消耗预测和低额度提醒。
-- Full/Mini/Ball 窗口模式、托盘集成、主题切换、Widget 显隐/排序。
-- 系统凭据库保存 API Key，SQLite 保存凭据引用；图片/GIF 资源隔离与安全校验。
-- 统一 UI 控件、背景/主题资源和基础 Miuix/液态玻璃视觉结构。
+### V0.5 高级统计（V0.5-alpha）
 
-## 当前项目结构
+- ✅ 消耗趋势：SVG 折线图（Token / 费用切换 + 账户下拉），基于当日 Token（`today_tokens`）与真实费用样本
+- ✅ 费用预测：近 N 天有效费用样本日均 → 预计剩余天数 / 预计耗尽日期（含样本数与覆盖天数说明）
+- ✅ 自动提醒：额度 <30% 黄色 / <10% 红色（剩余百分比）；余额型平台按预测剩余天数兜底（<7 天黄 / <3 天红），系统通知
+- ⚠️ 已知限制：提醒仅对能提供剩余百分比或可预测的平台有效；历史趋势至少需多日刷新数据；系统通知首次使用需授权
 
-```text
-src/                 React 页面、组件、状态、主题与测试
-src-tauri/src/       Rust 命令、Provider、SQLite、窗口、安全与资源模块
-public/              字体与主题资源
-Markdown/            项目文档、任务、测试、安全报告与阶段摘要
-.github/workflows/   CI 质量门禁
-package.json         前端与 Rust 检查脚本
+### V0.4 更多平台
+
+- ✅ **OpenRouter**：余额（key 剩余额度）+ 今日/月度费用 + 重置时间（`/api/v1/key`）
+- ✅ **SiliconFlow（硅基流动）**：余额查询（`/user/info`；端点无官方文档页，实验性）
+- ✅ **Claude (Anthropic)**：组织级 Usage & Cost API（需 **Admin Key**，个人账户不可用；后付费无余额，仅用量/费用）
+- ❌ **Gemini**：官方无公开余额/用量查询端点（仅 AI Studio Billing 页），**暂不可添加**，请到 aistudio.google.com 查看
+
+### V0.3 DIY UI（V0.3-alpha：排序 / 隐藏 / 双主题）
+
+- ✅ 主题系统：亮/暗主题切换（标题栏按钮），持久化并启动恢复
+- ✅ Widget 布局：账户列表 / 今日汇总 / 费用概览 三区块自由组合
+- ✅ 编辑模式：Widget 拖拽排序 + 显示/隐藏（布局 JSON 持久化）
+
+> 注：缩放、透明度、圆角、字体/颜色等完整 DIY 能力属后续迭代（见路线图）。
+
+### V0.2 桌面能力
+
+- ✅ 系统托盘：菜单（完整/Mini/小球模式、显示/隐藏/退出），左键单击切换窗口可见性
+- ✅ 窗口状态机：Full（完整 Dashboard）/ Mini（紧凑条）/ Ball（悬浮小球），可拖动、点击展开
+- ✅ Always On Top 置顶开关（持久化，启动自动恢复）
+- ✅ 关闭按钮隐藏到托盘（桌面工具惯例），托盘「退出」真退出
+
+### V0.1 基础版本
+
+- ✅ 多 Provider 统一管理（DeepSeek、OpenAI、**Codex（ChatGPT 订阅额度）**；类型可扩展）
+- ✅ Codex：仅通过 `codex login status` 检测公开登录状态，不读取认证文件、Cookie 或 Token
+  - ⚠️ **实验性**：依赖 codex-cli 0.146.0 内部接口，OpenAI 未公开承诺该端点稳定性；
+    CLI 升级或服务端调整可能导致失效。Base URL 固定官方地址不可修改（防止本机凭证泄露）。
+- ✅ Dashboard 卡片：余额、Token 用量、今日消耗、更新时间、进度条、逐账户失败状态
+- ✅ Settings 页：添加 / 编辑 / 删除 API 账户
+- ✅ 刷新策略：前台 10s / 后台 60s / 手动刷新 / 窗口聚焦立即刷新（单飞防重叠）
+- ✅ API Key **加密保存**至系统凭据库（Windows Credential Manager / macOS Keychain），绝不明文落库，凭据引用唯一 ID
+- ✅ SQLite 历史用量记账（`usage_history` 单日口径，为日报/周报/月报铺路）
+- ✅ 无边框 + 透明窗口 + 深色毛玻璃 UI
+
+## 🧱 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 桌面框架 | [Tauri 2](https://tauri.app)（Rust 2.x / WebView2 / 内置托盘） |
+| 前端 | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
+| 后端 | Rust（rusqlite / reqwest / keyring / tokio / chrono / uuid） |
+| 数据 | SQLite（WAL，版本化迁移） |
+
+## 📁 目录结构
+
+```
+├── src/                  # 前端（React + TS）
+│   ├── components/       #   TitleBar / ProviderCard / MiniBall
+│   ├── pages/            #   Dashboard / Settings
+│   ├── api.ts            #   invoke 封装
+│   └── types.ts          #   前后端共享类型
+├── src-tauri/            # 后端（Rust）
+│   ├── src/
+│   │   ├── db/           #   SQLite 连接 + 迁移
+│   │   ├── providers/    #   Provider 抽象 + 7 平台适配器（deepseek/openai/codex/openrouter/siliconflow/claude/gemini）
+│   │   ├── storage.rs    #   keyring 安全存储（uuid 凭据引用）
+│   │   ├── settings.rs   #   Provider CRUD + 设置
+│   │   ├── commands.rs   #   Tauri commands
+│   │   └── window_mode.rs#   Full/Mini/Ball 窗口状态机 + 置顶
+│   └── tauri.conf.json
+└── Markdown/Project/mission.md # 项目方案文档
 ```
 
-## Markdown 文档索引
+## 🚀 开发
 
-- [文档总索引](Markdown/Project/项目索引.md)
-- [项目维护说明](Markdown/Project/README_Project.md)
-- [开发指南](Markdown/Development/DEVELOPMENT_GUIDE.md)
-- [TodoList](Markdown/TODO_LIST.md)
-- [Codex 阶段摘要](Markdown/Summaries/Codex_Project_History_Summary_2026-08-14.md)
-- [项目状态摘要](Markdown/Summaries/README_Project_Status.md)
-- [主测试清单](Markdown/Tests/TEST_CASES.md)
-- [扩展测试资料](Markdown/Tests/AIAPIMonitor_TestCases.md)
-- [安全审计报告](Markdown/Security/Security_Audit_Report.md)
-- [安全测试报告](Markdown/Security/Security_Test_Report.md)
-- [安全操作手册](Markdown/Security/Manual_Security_Operations.md)
-- [代码复审记录](Markdown/CodeReview/codereview.md)
-- [优化任务](Markdown/CodeReview/优化建议.md)
-- [变更日志](Markdown/Development/CHANGELOG.md)
-- [Windows 启动说明](Markdown/Development/README_Startup.md)
+```bash
+pnpm install            # 安装依赖（含 @tauri-apps/cli）
+pnpm tauri dev          # 开发模式（热更新）
+pnpm tauri build        # 打包发布
 
-## 已完成功能
+cargo test              # 后端单元测试（src-tauri 目录下）
+```
 
-以当前代码和自动化测试可确认的范围为准：系统凭据库与 Key 脱敏、资源安全校验、基础 Provider 管理、主题与布局基础能力、趋势/预测/提醒、窗口状态同步和统一选择控件已实现。详细边界见 [TodoList](Markdown/TODO_LIST.md) 与 [安全审计](Markdown/Security/Security_Audit_Report.md)。
+> 国内镜像已配置：crates.io（中科大 sparse）位于 `~/.cargo/config.toml`，npm 走 npmmirror。
 
-## 当前未完成任务
+## 🔌 新增 Provider
 
-Provider HTTP Mock 与真实接口验证、桌面 E2E、多平台凭据库/窗口验证、旧凭据迁移、诊断备份恢复、完整 DIY UI、生产自动更新配置仍未完成。不要仅凭历史审查中的“已修复”文字勾选任务。
+实现 `ProviderAdapter` trait 并在 `src-tauri/src/providers/mod.rs` 的
+`ProviderManager::new()` 注册即可，前端无需改动：
 
-## 最近主要修改
+```rust
+#[async_trait]
+impl ProviderAdapter for MyProvider {
+    async fn fetch_usage(&self, config: &ProviderConfig, api_key: &str)
+        -> Result<ProviderUsage, ProviderError> { /* ... */ }
+}
+```
 
-- 安全模块覆盖凭据、网络、日志、敏感设置、图片/GIF 与平台目录。
-- 增加主题资源、背景裁剪、Miuix 风格组件和统一控件。
-- 整理项目文档目录，迁移根目录项目 Markdown，统一 `Markdown/Tests` 命名并修复相对路径。
+> 类型需在 `ProviderManager` 注册（白名单校验），URL 必须使用 HTTPS。
+> 特例：`codex` 类型无需 API Key——仅执行 Codex CLI 的公开登录状态检查，
+> 前端表单会隐藏 Key 输入（见 `NO_API_KEY_TYPES`）。
 
-## 安全状态
+## 🔐 安全
 
-安全基线已进入代码和自动化测试，但 RustSec/依赖审计、真实平台凭据库、网络边界、资源手工攻击样本和发布签名仍需执行。生产自动更新当前只能视为安全禁用的集成骨架。
+- API Key 仅存于系统凭据库（uuid 唯一引用），SQLite 只保存引用，前端不可见
+- 凭据写入/数据库操作带失败补偿回滚
+- 刷新间隔后端最终校验（前台 10–3600s / 后台 60–3600s / 后台 ≥ 前台）
+- 数据库位于系统 app data 目录（`com.aiapimonitor.desktop`）
 
-## 测试状态
+## 📦 发布（V1.0-alpha）
 
-TodoList 记录的历史审计为前端 15 项、Rust 91 项通过；本次在当前环境重新运行时，pnpm 依赖重建因并发安装出现 `ENOENT`，随后 TypeScript 因不完整 `node_modules` 失败，因此本次不能把质量门禁标记为新近通过。详见 [TodoList](Markdown/TODO_LIST.md)。
+自动更新需要发布者在构建时配置签名与更新源（`tauri-plugin-updater` 已集成）：
 
-## 后续开发重点
+> 当前仓库的 `pubkey` 与 `endpoints` 为占位空值，因此自动更新仅为集成骨架；发布包前必须完成下面的配置。
 
-1. 修复并稳定依赖安装后重新执行 `pnpm check`、`pnpm build` 与 `pnpm security:audit`。
-2. 建立 Provider HTTP Mock 合约测试，补齐真实权限、限流和错误场景。
-3. 完成真实 Tauri 桌面冒烟、托盘/悬浮窗/多屏和跨平台凭据库验证。
-4. 完成 updater 发布配置、诊断备份恢复和剩余高优先级安全手工验收。
+```bash
+# 1. 生成更新签名密钥（仅一次，妥善保管）
+npx tauri signer generate -w ~/.tauri/myapp.key
 
-## 文档整理记录
+# 2. 在 src-tauri/tauri.conf.json 的 app.updater 段填写：
+#    "endpoints": ["https://your-host/updates/{{target}}/{{arch}}/{{current_version}}"],
+#    "pubkey": "<上面生成的公钥>"
 
-最后整理时间：2026-08-14 15:10 (UTC+8)
+# 3. 打包发布（Windows 生成 NSIS/MSI 安装包）
+pnpm tauri build
 
-本次扫描项目自有 Markdown、可见 Codex 历史摘要和当前代码；根目录项目文档已迁移至 `Markdown/Development` 或 `Markdown/Summaries`，测试目录统一为 `Markdown/Tests`，旧安全原稿归档至 `Markdown/Archive`，并更新索引与相对路径。依赖、构建产物、`.git`、`.reasonix`、`node_modules` 和工具/技能自身 Markdown 未移动。
+# 4. 将安装包与生成的 .sig 签名文件上传到更新源服务器
+```
+
+未配置更新源时，应用内「检查更新」会提示"更新器未配置"；配置后即可正常检查/下载/安装。
+
+### 平台
+
+- Windows：NSIS 安装包（默认）与 MSI
+- macOS：DMG（需在 macOS 上执行构建并配置签名证书）
+- 发布 CI 参考 `.github/workflows/quality.yml`（质量检查）；正式发布流水线可按需扩展
+
+## 🗺️ 路线图
+
+- 完整 DIY UI（Widget 缩放 / 透明 / 圆角 / 字体 / 颜色 / 自由定位）
+- Codex Provider 官方化（依赖稳定公开接口替代内部端点）
+- 前端组件自动化测试与 HTTP mock 集成测试
+- 真实账户端到端验证记录
