@@ -31,3 +31,5 @@ src-tauri/gen/schemas
 # Session/agent metadata
 .reasonix/
 scripts/
+backups/real-app-data-20260817-164834/ai-api-monitor.db
+backups/

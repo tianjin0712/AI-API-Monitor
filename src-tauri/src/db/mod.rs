@@ -62,10 +62,16 @@ impl Db {
         }
         crate::security::safe_log(
             "database_recovery",
-            format!("database recovery started; original preserved at {}", recovery_path.display()),
+            format!(
+                "database recovery started; original preserved at {}",
+                recovery_path.display()
+            ),
         );
         let conn = open_fresh(db_path)?;
-        crate::security::safe_log("database_recovery", "database recovery completed with a clean database");
+        crate::security::safe_log(
+            "database_recovery",
+            "database recovery completed with a clean database",
+        );
         Ok(Self {
             conn: Mutex::new(conn),
             recovery_notice: Some(format!(
@@ -131,7 +137,11 @@ fn is_busy(error: &SqlError) -> bool {
 fn recovery_path(db_path: &Path) -> PathBuf {
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
     let unique = uuid::Uuid::new_v4();
-    PathBuf::from(format!("{}.recovery-{}-{unique}.db", db_path.display(), stamp))
+    PathBuf::from(format!(
+        "{}.recovery-{}-{unique}.db",
+        db_path.display(),
+        stamp
+    ))
 }
 
 fn create_snapshot(db_path: &Path, version: i64) -> rusqlite::Result<()> {
@@ -143,7 +153,10 @@ fn create_snapshot(db_path: &Path, version: i64) -> rusqlite::Result<()> {
     std::fs::create_dir_all(&snapshot_dir).map_err(io_error)?;
     crate::platform_security::harden_private_path(&snapshot_dir, true).map_err(io_error)?;
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S%.3f");
-    let base = snapshot_dir.join(format!("ai-api-monitor-v{version}-{stamp}-{}.db", uuid::Uuid::new_v4()));
+    let base = snapshot_dir.join(format!(
+        "ai-api-monitor-v{version}-{stamp}-{}.db",
+        uuid::Uuid::new_v4()
+    ));
     std::fs::copy(db_path, &base).map_err(io_error)?;
     for suffix in ["-wal", "-shm"] {
         let source = PathBuf::from(format!("{}{}", db_path.display(), suffix));
@@ -153,7 +166,10 @@ fn create_snapshot(db_path: &Path, version: i64) -> rusqlite::Result<()> {
         }
     }
     crate::platform_security::harden_private_path(&base, false).map_err(io_error)?;
-    crate::security::safe_log("migration", format!("snapshot created for schema v{version}"));
+    crate::security::safe_log(
+        "migration",
+        format!("snapshot created for schema v{version}"),
+    );
     retain_snapshots(&snapshot_dir);
     Ok(())
 }
@@ -172,7 +188,8 @@ fn retain_snapshots(dir: &Path) {
             let path = entry.path();
             let _ = std::fs::remove_file(&path);
             for suffix in ["-wal", "-shm"] {
-                let _ = std::fs::remove_file(PathBuf::from(format!("{}{}", path.display(), suffix)));
+                let _ =
+                    std::fs::remove_file(PathBuf::from(format!("{}{}", path.display(), suffix)));
             }
         }
         files.remove(0);
@@ -188,13 +205,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         Ok(()) => {
             let result = conn.execute_batch("COMMIT");
             if result.is_ok() {
-                crate::security::safe_log("migration", format!("migration success schema_v={SCHEMA_VERSION}"));
+                crate::security::safe_log(
+                    "migration",
+                    format!("migration success schema_v={SCHEMA_VERSION}"),
+                );
             }
             result
         }
         Err(error) => {
             let _ = conn.execute_batch("ROLLBACK");
-            crate::security::safe_log("migration", format!("migration failed and rolled back: {error}"));
+            crate::security::safe_log(
+                "migration",
+                format!("migration failed and rolled back: {error}"),
+            );
             Err(error)
         }
     }
@@ -471,7 +494,8 @@ mod tests {
 
     #[test]
     fn corrupt_database_is_preserved_and_recovered() {
-        let root = std::env::temp_dir().join(format!("ai-monitor-db-recovery-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("ai-monitor-db-recovery-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("ai-api-monitor.db");
         std::fs::write(&path, b"not a sqlite database").unwrap();
@@ -479,8 +503,10 @@ mod tests {
         let db = Db::open(&path).expect("corrupt database should recover into a clean database");
         assert!(db.recovery_notice().is_some());
         assert_eq!(
-            db.with_conn(|conn| conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0)))
-                .unwrap(),
+            db.with_conn(
+                |conn| conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            )
+            .unwrap(),
             SCHEMA_VERSION
         );
         let preserved = std::fs::read_dir(&root)

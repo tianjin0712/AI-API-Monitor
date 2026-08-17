@@ -283,10 +283,16 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
     if key_ref.is_empty() {
         db.with_conn(|conn| {
             let deleted = conn.execute("DELETE FROM providers WHERE id = ?1", [id])?;
-            if deleted == 0 { return Err(rusqlite::Error::QueryReturnedNoRows); }
+            if deleted == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
             Ok(())
         })?;
-        return Ok(DeleteResult { provider_id: id, credential_cleaned: true, note: None });
+        return Ok(DeleteResult {
+            provider_id: id,
+            credential_cleaned: true,
+            note: None,
+        });
     }
 
     let secret = match SecureStorage::get_api_key(&key_ref) {
@@ -294,35 +300,58 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
         Err(crate::storage::StorageError::Keyring(keyring::Error::NoEntry)) => {
             // The credential is already absent; removing the stale database
             // reference is safe and makes the operation retryable/idempotent.
-            crate::security::safe_log("credential_delete", format!("credential already absent for provider id={id}"));
+            crate::security::safe_log(
+                "credential_delete",
+                format!("credential already absent for provider id={id}"),
+            );
             None
         }
         Err(error) => {
-            crate::security::safe_log("credential_delete", format!("credential read failed for provider id={id}: {error}"));
+            crate::security::safe_log(
+                "credential_delete",
+                format!("credential read failed for provider id={id}: {error}"),
+            );
             return Err(AppError::Storage(error));
         }
     };
     if secret.is_some() {
         SecureStorage::delete_api_key(&key_ref).map_err(|error| {
-            crate::security::safe_log("credential_delete", format!("credential delete failed for provider id={id}: {error}"));
+            crate::security::safe_log(
+                "credential_delete",
+                format!("credential delete failed for provider id={id}: {error}"),
+            );
             AppError::Storage(error)
         })?;
     }
 
     let deleted = db.with_conn(|conn| {
         let deleted = conn.execute("DELETE FROM providers WHERE id = ?1", [id])?;
-        if deleted == 0 { return Err(rusqlite::Error::QueryReturnedNoRows); }
+        if deleted == 0 {
+            return Err(rusqlite::Error::QueryReturnedNoRows);
+        }
         Ok(())
     });
     match deleted {
         Ok(()) => {
-            crate::security::safe_log("credential_delete", format!("credential delete completed for provider id={id}"));
-            Ok(DeleteResult { provider_id: id, credential_cleaned: true, note: None })
+            crate::security::safe_log(
+                "credential_delete",
+                format!("credential delete completed for provider id={id}"),
+            );
+            Ok(DeleteResult {
+                provider_id: id,
+                credential_cleaned: true,
+                note: None,
+            })
         }
         Err(rusqlite::Error::QueryReturnedNoRows) => {
             if let Some(secret) = secret.as_ref() {
                 let _ = SecureStorage::update_api_key(&key_ref, secret.as_str()).map_err(|error| {
-                    crate::security::safe_log("credential_delete", format!("credential delete compensation failed for provider id={id}: {error}"));
+                    crate::security::safe_log(
+                        "credential_delete",
+                        format!(
+                            "credential delete compensation failed for provider id={id}: {error}"
+                        ),
+                    );
                 });
             }
             Err(AppError::ProviderNotFound(id))
@@ -572,7 +601,10 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
             if let Err(error) = SecureStorage::delete_api_key(&key_ref) {
                 crate::security::safe_log("migration", format!("credential UUID migrated but old credential cleanup failed for provider id={id}: {error}"));
             }
-            crate::security::safe_log("migration", format!("credential UUID migrated for provider id={id}"));
+            crate::security::safe_log(
+                "migration",
+                format!("credential UUID migrated for provider id={id}"),
+            );
             Ok(())
         })();
         if let Err(error) = result {
