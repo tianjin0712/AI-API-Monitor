@@ -26,22 +26,6 @@ pub struct CodexRuntimeStatus {
 pub struct CodexProvider;
 pub const DEFAULT_CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
 
-/// Builds a Codex runtime command without allowing Windows to create a visible
-/// console window. Redirecting stdio alone does not suppress a console for a
-/// GUI parent process.
-fn codex_command(executable: &std::path::Path) -> Command {
-    let mut command = Command::new(executable);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-
-        // CREATE_NO_WINDOW: keep periodic `login status` and `app-server`
-        // invocations from flashing a terminal for installed users.
-        command.creation_flags(0x0800_0000);
-    }
-    command
-}
-
 fn write_message(child: &mut Child, message: Value) -> Result<(), ProviderError> {
     let stdin = child
         .stdin
@@ -102,7 +86,7 @@ fn runtime_source_label(source: RuntimeSource) -> &'static str {
 pub fn runtime_status() -> CodexRuntimeStatus {
     let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
     for runtime in &candidates {
-        let logged_in = codex_command(&runtime.executable)
+        let logged_in = Command::new(&runtime.executable)
             .args(["login", "status"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -133,7 +117,7 @@ pub fn start_login() -> Result<(), ProviderError> {
         .into_iter()
         .next()
         .ok_or_else(|| ProviderError::Api("未安装 ChatGPT/Codex Desktop 或 Codex CLI".into()))?;
-    codex_command(&runtime.executable)
+    Command::new(runtime.executable)
         .arg("login")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -152,7 +136,7 @@ pub fn start_rate_limit_monitor(app: tauri::AppHandle) {
             let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
             let mut connected = false;
             for runtime in candidates {
-                let Ok(mut child) = codex_command(&runtime.executable)
+                let Ok(mut child) = Command::new(&runtime.executable)
                     .arg("app-server")
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
@@ -359,7 +343,7 @@ fn apply_account_usage(usage: &mut ProviderUsage, response: &Value) {
 fn fetch_from_runtime(
     runtime: &super::desktop_runtime::ResolvedRuntime,
 ) -> Result<ProviderUsage, ProviderError> {
-    let mut child = codex_command(&runtime.executable)
+    let mut child = Command::new(&runtime.executable)
         .arg("app-server")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
