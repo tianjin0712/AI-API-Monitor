@@ -1,0 +1,4 @@
+interface:
+  display_name: "AI API Monitor Quality Gate"
+  short_description: "Run consistent build, test, security, and handoff checks"
+  default_prompt: "Use $ai-api-monitor-quality-gate to validate the current AI API Monitor changes and report whether they are ready to hand off."
