@@ -47,7 +47,10 @@ impl Db {
         let error = last_error.expect("database open must produce an error");
         crate::security::safe_log(
             "database_open_failed",
-            format!("database open failed; class={}; error={error}", database_error_class(&error)),
+            format!(
+                "database open failed; class={}; error={error}",
+                database_error_class(&error)
+            ),
         );
         if is_busy(&error) {
             crate::security::safe_log("database_locked", "database remained locked after retries");
@@ -63,21 +66,11 @@ impl Db {
         // risking a partial recovery or data loss.
         let recovery_path = recovery_path(db_path);
         crate::security::safe_log(
-<<<<<<< HEAD
-            "database_recovery",
+            "database_recovery_started",
             format!(
                 "database recovery started; original preserved at {}",
                 recovery_path.display()
             ),
-        );
-        let conn = open_fresh(db_path)?;
-        crate::security::safe_log(
-            "database_recovery",
-            "database recovery completed with a clean database",
-        );
-=======
-            "database_recovery_started",
-            format!("database recovery started; original preserved at {}", recovery_path.display()),
         );
         if let Err(error) = preserve_corrupt_database(db_path, &recovery_path) {
             crate::security::safe_log(
@@ -96,8 +89,10 @@ impl Db {
                 return Err(error);
             }
         };
-        crate::security::safe_log("database_recovery_completed", "database recovery completed with a clean database");
->>>>>>> eb2a610773a651c73588e209292c0e3971bd730f
+        crate::security::safe_log(
+            "database_recovery_completed",
+            "database recovery completed with a clean database",
+        );
         Ok(Self {
             conn: Mutex::new(conn),
             recovery_notice: Some(format!(
@@ -576,11 +571,22 @@ mod tests {
             .unwrap()
             .filter_map(Result::ok)
             .map(|entry| entry.path())
-            .find(|path| path.file_name().unwrap().to_string_lossy().contains(".recovery-"))
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .contains(".recovery-")
+            })
             .expect("原始数据库必须保留为 recovery 文件");
         assert_eq!(std::fs::read(&recovery).unwrap(), original);
-        assert_eq!(std::fs::read(format!("{}-wal", recovery.display())).unwrap(), b"old wal");
-        assert_eq!(std::fs::read(format!("{}-shm", recovery.display())).unwrap(), b"old shm");
+        assert_eq!(
+            std::fs::read(format!("{}-wal", recovery.display())).unwrap(),
+            b"old wal"
+        );
+        assert_eq!(
+            std::fs::read(format!("{}-shm", recovery.display())).unwrap(),
+            b"old shm"
+        );
         assert!(!std::fs::read(&path).unwrap().starts_with(original));
         let _ = std::fs::remove_dir_all(root);
     }
