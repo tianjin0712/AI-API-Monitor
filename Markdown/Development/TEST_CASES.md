@@ -96,3 +96,10 @@
 2. Provider 回归：TC-006～TC-020、TC-024～TC-030。
 3. 桌面体验回归：TC-031、TC-042～TC-050。
 4. 高级统计回归：TC-033～TC-041，优先使用固定 Mock 数据保证结果可重复。
+
+## 9. P0 数据库恢复（待 Windows 安装版复验）
+
+| 编号 | 优先级 | 场景 | 操作步骤 | 预期结果 |
+|---|---|---|---|---|
+| P0-DB-01 | P0 | 主数据库损坏恢复 | 应用完全退出后备份数据目录，将 `ai-api-monitor.db` 替换为 `INVALID_SQLITE_DATABASE`，保留同名 `-wal` / `-shm` 后启动安装版。 | 应用进入主界面；旧 `.db`、`-wal`、`-shm` 均改名保留为同一唯一 recovery 基名；新库完成 Schema 初始化；显示一次恢复提示；日志含 `database_open_failed`、`database_recovery_started`、`database_recovery_completed`，且不含密钥。 |
+| P0-DB-02 | P0 | 数据库锁冲突 | 保留原数据库并用另一进程持有 SQLite 写锁后启动。 | 仅有限重试并记录 `database_retry` / `database_locked`；不创建 recovery 文件、不移动原 `.db` / WAL / SHM、不创建空库；最终给出数据库被占用的明确错误。 |
