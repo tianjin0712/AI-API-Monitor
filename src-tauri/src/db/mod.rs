@@ -31,7 +31,7 @@ impl Db {
                 }
                 Err(error) if is_busy(&error) && attempt + 1 < OPEN_RETRIES => {
                     crate::security::safe_log(
-                        "database",
+                        "database_retry",
                         format!("database locked, retry {}/{}", attempt + 1, OPEN_RETRIES),
                     );
                     thread::sleep(Duration::from_millis(250 * (attempt as u64 + 1)));
@@ -45,27 +45,45 @@ impl Db {
         }
 
         let error = last_error.expect("database open must produce an error");
-        if !db_path.exists() || is_busy(&error) {
+        crate::security::safe_log(
+            "database_open_failed",
+            format!("database open failed; class={}; error={error}", database_error_class(&error)),
+        );
+        if is_busy(&error) {
+            crate::security::safe_log("database_locked", "database remained locked after retries");
+        }
+        if !db_path.exists() || is_busy(&error) || !is_corruption(&error) {
             return Err(error);
         }
 
-        // Keep the original file intact under a timestamped recovery name,
-        // then start with a clean database so a corrupt migration cannot block
-        // the whole application.
+        // SQLite WAL state belongs to its main database. Move both sidecars
+        // before creating a replacement, so a fresh ai-api-monitor.db can
+        // never replay an old -wal file. If preserving any file fails, do not
+        // create a replacement database: returning the error is safer than
+        // risking a partial recovery or data loss.
         let recovery_path = recovery_path(db_path);
-        std::fs::rename(db_path, &recovery_path).map_err(io_error)?;
-        for suffix in ["-wal", "-shm"] {
-            let sidecar = PathBuf::from(format!("{}{}", db_path.display(), suffix));
-            if sidecar.exists() {
-                let _ = std::fs::rename(&sidecar, format!("{}{}", recovery_path.display(), suffix));
-            }
-        }
         crate::security::safe_log(
-            "database_recovery",
+            "database_recovery_started",
             format!("database recovery started; original preserved at {}", recovery_path.display()),
         );
-        let conn = open_fresh(db_path)?;
-        crate::security::safe_log("database_recovery", "database recovery completed with a clean database");
+        if let Err(error) = preserve_corrupt_database(db_path, &recovery_path) {
+            crate::security::safe_log(
+                "database_recovery_failed",
+                format!("could not preserve corrupt database; error={error}"),
+            );
+            return Err(error);
+        }
+        let conn = match open_fresh(db_path) {
+            Ok(conn) => conn,
+            Err(error) => {
+                crate::security::safe_log(
+                    "database_recovery_failed",
+                    format!("could not initialize clean database; error={error}"),
+                );
+                return Err(error);
+            }
+        };
+        crate::security::safe_log("database_recovery_completed", "database recovery completed with a clean database");
         Ok(Self {
             conn: Mutex::new(conn),
             recovery_notice: Some(format!(
@@ -128,10 +146,44 @@ fn is_busy(error: &SqlError) -> bool {
     )
 }
 
+/// Only these SQLite failures mean the database bytes cannot be safely read.
+/// In particular, filesystem, permission, migration, and I/O errors must not
+/// trigger recovery: the original database remains in place for investigation.
+fn is_corruption(error: &SqlError) -> bool {
+    matches!(
+        error,
+        SqlError::SqliteFailure(inner, _) if matches!(
+            inner.code,
+            ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase
+        )
+    )
+}
+
+fn database_error_class(error: &SqlError) -> &'static str {
+    if is_busy(error) {
+        "locked_or_busy"
+    } else if is_corruption(error) {
+        "corruption"
+    } else {
+        "other"
+    }
+}
+
 fn recovery_path(db_path: &Path) -> PathBuf {
     let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
     let unique = uuid::Uuid::new_v4();
     PathBuf::from(format!("{}.recovery-{}-{unique}.db", db_path.display(), stamp))
+}
+
+fn preserve_corrupt_database(db_path: &Path, recovery_path: &Path) -> rusqlite::Result<()> {
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = PathBuf::from(format!("{}{}", db_path.display(), suffix));
+        if sidecar.exists() {
+            std::fs::rename(&sidecar, format!("{}{}", recovery_path.display(), suffix))
+                .map_err(io_error)?;
+        }
+    }
+    std::fs::rename(db_path, recovery_path).map_err(io_error)
 }
 
 fn create_snapshot(db_path: &Path, version: i64) -> rusqlite::Result<()> {
@@ -474,7 +526,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("ai-monitor-db-recovery-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("ai-api-monitor.db");
-        std::fs::write(&path, b"not a sqlite database").unwrap();
+        let original = b"INVALID_SQLITE_DATABASE";
+        std::fs::write(&path, original).unwrap();
+        std::fs::write(format!("{}-wal", path.display()), b"old wal").unwrap();
+        std::fs::write(format!("{}-shm", path.display()), b"old shm").unwrap();
 
         let db = Db::open(&path).expect("corrupt database should recover into a clean database");
         assert!(db.recovery_notice().is_some());
@@ -483,11 +538,36 @@ mod tests {
                 .unwrap(),
             SCHEMA_VERSION
         );
-        let preserved = std::fs::read_dir(&root)
+        let recovery = std::fs::read_dir(&root)
             .unwrap()
             .filter_map(Result::ok)
-            .any(|entry| entry.file_name().to_string_lossy().contains(".recovery-"));
-        assert!(preserved, "原始数据库必须保留为 recovery 文件");
+            .map(|entry| entry.path())
+            .find(|path| path.file_name().unwrap().to_string_lossy().contains(".recovery-"))
+            .expect("原始数据库必须保留为 recovery 文件");
+        assert_eq!(std::fs::read(&recovery).unwrap(), original);
+        assert_eq!(std::fs::read(format!("{}-wal", recovery.display())).unwrap(), b"old wal");
+        assert_eq!(std::fs::read(format!("{}-shm", recovery.display())).unwrap(), b"old shm");
+        assert!(!std::fs::read(&path).unwrap().starts_with(original));
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recovery_paths_are_unique() {
+        let path = Path::new("/tmp/ai-api-monitor.db");
+        assert_ne!(recovery_path(path), recovery_path(path));
+    }
+
+    #[test]
+    fn locked_errors_are_not_corruption() {
+        let error = SqlError::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: ErrorCode::DatabaseLocked,
+                extended_code: rusqlite::ffi::SQLITE_LOCKED,
+            },
+            None,
+        );
+        assert!(is_busy(&error));
+        assert!(!is_corruption(&error));
+        assert_eq!(database_error_class(&error), "locked_or_busy");
     }
 }
