@@ -314,6 +314,18 @@ pub fn get_migration_status(db: State<'_, Db>) -> Option<u64> {
         .and_then(|s| s.parse().ok())
 }
 
+/// Read and clear the one-time database recovery notice shown after startup.
+#[tauri::command]
+pub fn get_database_recovery_notice(db: State<'_, Db>) -> Option<String> {
+    let notice = settings::get_setting(&db, settings::SETTING_DATABASE_RECOVERY_NOTICE)
+        .ok()
+        .flatten();
+    if notice.is_some() {
+        let _ = settings::delete_setting(&db, settings::SETTING_DATABASE_RECOVERY_NOTICE);
+    }
+    notice
+}
+
 // ---- V0.5 高级统计 ----
 
 /// 单日用量（历史序列数据点）。

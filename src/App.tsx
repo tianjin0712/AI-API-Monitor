@@ -103,6 +103,12 @@ function AppShell() {
       .finally(() => setLayoutLoaded(true));
   }, []);
 
+  useEffect(() => {
+    void api.getDatabaseRecoveryNotice().then((notice) => {
+      if (notice) window.alert(notice);
+    }).catch(() => {});
+  }, []);
+
   // 布局持久化（P1：统一保存入口，防抖 + 失败可见）
   const persistLayout = useCallback((next: Layout) => {
     window.clearTimeout(saveTimer.current);

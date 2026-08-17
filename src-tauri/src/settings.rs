@@ -18,6 +18,7 @@ pub const SETTING_LAYOUT: &str = "ui.layout";
 pub const SETTING_TELEMETRY_ENABLED: &str = "privacy.telemetryEnabled";
 pub const SETTING_APPROVED_CUSTOM_ORIGINS: &str = "network.approvedCustomOrigins";
 pub const SETTING_CLOSE_BEHAVIOR: &str = "app.closeBehavior";
+pub const SETTING_DATABASE_RECOVERY_NOTICE: &str = "database.recoveryNotice";
 
 /// 应用层错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
@@ -267,8 +268,8 @@ pub struct DeleteResult {
     pub note: Option<String>,
 }
 
-/// 删除 Provider：先删数据库行，再清 keyring 凭证。
-/// 凭据清理失败时返回可见状态（不静默），供前端提示用户。
+/// 删除 Provider：先读取并删除系统凭据，再删除数据库记录。
+/// 数据库失败时使用原凭据内容补偿恢复；任一步失败都会保留数据库记录，允许重试。
 pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
     let key_ref: Option<String> = db.with_conn(|conn| {
         conn.query_row("SELECT key_ref FROM providers WHERE id = ?1", [id], |row| {
@@ -276,42 +277,65 @@ pub fn delete_provider(db: &Db, id: i64) -> Result<DeleteResult, AppError> {
         })
         .optional()
     })?;
-    db.with_conn(|conn| {
-        let deleted = conn.execute("DELETE FROM providers WHERE id = ?1", [id])?;
-        if deleted == 0 {
-            return Err(rusqlite::Error::QueryReturnedNoRows);
-        }
-        Ok(())
-    })
-    .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => AppError::ProviderNotFound(id),
-        other => AppError::Db(other),
-    })?;
+    let Some(key_ref) = key_ref else {
+        return Err(AppError::ProviderNotFound(id));
+    };
+    if key_ref.is_empty() {
+        db.with_conn(|conn| {
+            let deleted = conn.execute("DELETE FROM providers WHERE id = ?1", [id])?;
+            if deleted == 0 { return Err(rusqlite::Error::QueryReturnedNoRows); }
+            Ok(())
+        })?;
+        return Ok(DeleteResult { provider_id: id, credential_cleaned: true, note: None });
+    }
 
-    // P1：仅对真正写入过 keyring 的引用执行清理；空 key_ref（如 Codex CLI 凭证）直接成功
-    match key_ref.as_deref() {
-        None | Some("") => Ok(DeleteResult {
-            provider_id: id,
-            credential_cleaned: true,
-            note: None,
-        }),
-        Some(kr) => match SecureStorage::delete_api_key(kr) {
-            Ok(()) => Ok(DeleteResult {
-                provider_id: id,
-                credential_cleaned: true,
-                note: None,
-            }),
-            Err(e) => {
-                crate::security::safe_log("delete_provider", format!("凭据清理失败: {e}"));
-                Ok(DeleteResult {
-                    provider_id: id,
-                    credential_cleaned: false,
-                    note: Some(format!(
-                        "账户已删除，但系统凭据库中的密钥清理失败，可能残留敏感信息：{e}"
-                    )),
-                })
+    let secret = match SecureStorage::get_api_key(&key_ref) {
+        Ok(secret) => Some(secret),
+        Err(crate::storage::StorageError::Keyring(keyring::Error::NoEntry)) => {
+            // The credential is already absent; removing the stale database
+            // reference is safe and makes the operation retryable/idempotent.
+            crate::security::safe_log("credential_delete", format!("credential already absent for provider id={id}"));
+            None
+        }
+        Err(error) => {
+            crate::security::safe_log("credential_delete", format!("credential read failed for provider id={id}: {error}"));
+            return Err(AppError::Storage(error));
+        }
+    };
+    if secret.is_some() {
+        SecureStorage::delete_api_key(&key_ref).map_err(|error| {
+            crate::security::safe_log("credential_delete", format!("credential delete failed for provider id={id}: {error}"));
+            AppError::Storage(error)
+        })?;
+    }
+
+    let deleted = db.with_conn(|conn| {
+        let deleted = conn.execute("DELETE FROM providers WHERE id = ?1", [id])?;
+        if deleted == 0 { return Err(rusqlite::Error::QueryReturnedNoRows); }
+        Ok(())
+    });
+    match deleted {
+        Ok(()) => {
+            crate::security::safe_log("credential_delete", format!("credential delete completed for provider id={id}"));
+            Ok(DeleteResult { provider_id: id, credential_cleaned: true, note: None })
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            if let Some(secret) = secret.as_ref() {
+                let _ = SecureStorage::update_api_key(&key_ref, secret.as_str()).map_err(|error| {
+                    crate::security::safe_log("credential_delete", format!("credential delete compensation failed for provider id={id}: {error}"));
+                });
             }
-        },
+            Err(AppError::ProviderNotFound(id))
+        }
+        Err(error) => {
+            if let Some(secret) = secret.as_ref() {
+                match SecureStorage::update_api_key(&key_ref, secret.as_str()) {
+                    Ok(()) => crate::security::safe_log("credential_delete", format!("credential delete rolled back after database failure for provider id={id}")),
+                    Err(restore_error) => crate::security::safe_log("credential_delete", format!("credential delete compensation failed for provider id={id}: {restore_error}")),
+                }
+            }
+            Err(AppError::Db(error))
+        }
     }
 }
 
@@ -532,29 +556,30 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
         if !account.starts_with("provider_") {
             continue; // 已是 UUID 格式（key_<uuid>）或未知格式
         }
-        match SecureStorage::get_api_key(&key_ref) {
-            Ok(api_key) => {
-                let key_id = SecureStorage::gen_key_id();
-                let new_ref = SecureStorage::save_api_key(&key_id, &api_key)?;
-                db.with_conn(|conn| {
-                    conn.execute(
-                        "UPDATE providers SET key_ref = ?1, key_hint = ?2 WHERE id = ?3",
-                        rusqlite::params![new_ref, crate::security::mask_secret(&api_key), id],
-                    )
-                })?;
-                if let Err(e) = SecureStorage::delete_api_key(&key_ref) {
-                    crate::security::safe_log("migrate", format!("清理旧凭据失败: {e}"));
-                }
-                migrated += 1;
+        let result = (|| -> Result<(), AppError> {
+            let api_key = SecureStorage::get_api_key(&key_ref)?;
+            let key_id = SecureStorage::gen_key_id();
+            let new_ref = SecureStorage::save_api_key(&key_id, &api_key)?;
+            if let Err(error) = db.with_conn(|conn| {
+                conn.execute(
+                    "UPDATE providers SET key_ref = ?1, key_hint = ?2 WHERE id = ?3",
+                    rusqlite::params![new_ref, crate::security::mask_secret(&api_key), id],
+                )
+            }) {
+                let _ = SecureStorage::delete_api_key(&new_ref);
+                return Err(AppError::Db(error));
             }
-            Err(e) => {
-                // 凭据无法读取：保留旧记录并统计失败，供前端提示用户重新录入
-                crate::security::safe_log(
-                    "migrate",
-                    format!("旧凭据无法读取（provider id={id}）: {e}，请重新录入该账户"),
-                );
-                failed += 1;
+            if let Err(error) = SecureStorage::delete_api_key(&key_ref) {
+                crate::security::safe_log("migration", format!("credential UUID migrated but old credential cleanup failed for provider id={id}: {error}"));
             }
+            crate::security::safe_log("migration", format!("credential UUID migrated for provider id={id}"));
+            Ok(())
+        })();
+        if let Err(error) = result {
+            crate::security::safe_log("migration", format!("credential UUID migration failed for provider id={id}: {error}; old record retained"));
+            failed += 1;
+        } else {
+            migrated += 1;
         }
     }
     Ok(MigrateResult { migrated, failed })
@@ -630,7 +655,10 @@ mod security_tests {
                  CREATE TABLE secure_settings (key TEXT PRIMARY KEY, ciphertext BLOB NOT NULL, nonce BLOB NOT NULL);",
             )
             .unwrap();
-        let db = Db(std::sync::Mutex::new(connection));
+        let db = Db {
+            conn: std::sync::Mutex::new(connection),
+            recovery_notice: None,
+        };
         let endpoint = "https://gateway.example.com/v1";
         assert!(!is_custom_endpoint_approved(&db, endpoint).unwrap());
         assert_eq!(

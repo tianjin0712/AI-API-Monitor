@@ -9,7 +9,7 @@
 
 ## Windows 安装验收结果
 
-Windows 安装版已完成实际安装测试。安装后，应用启动、Dashboard、Provider 管理与刷新、主题图片/GIF、托盘、Full/Mini/Ball 窗口模式、设置持久化、开机自启以及用户数据隔离均验证可正常使用。
+Windows 安装版已完成实际安装测试。安装后，应用启动、Dashboard、Provider 管理与刷新、主题图片/GIF、托盘、Full/Mini/Ball 窗口模式、设置持久化、开机自启、置顶、拖拽、多显示器与不同 DPI 缩放，以及用户数据隔离均验证可正常使用。Codex Runtime 的后台子进程已验证不会弹出控制台窗口。
 
 ## 用户数据与故障排查
 

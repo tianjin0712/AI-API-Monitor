@@ -51,9 +51,19 @@ pub fn run() {
             let db = Db::open(&db_path).map_err(|error| {
                 std::io::Error::other(format!("无法打开应用数据库 {}: {error}", db_path.display()))
             })?;
+            let recovery_notice = db.recovery_notice().map(str::to_owned);
             app.manage(db);
             app.manage(Arc::new(ProviderManager::new()));
             app.manage(commands::AlertState::default());
+
+            if let Some(notice) = recovery_notice {
+                security::safe_log("database_recovery", &notice);
+                let _ = settings::set_setting(
+                    app.state::<Db>().inner(),
+                    settings::SETTING_DATABASE_RECOVERY_NOTICE,
+                    &notice,
+                );
+            }
 
             // 启动时执行旧凭据迁移（幂等，V3）；失败数写入 settings 供前端提示
             match settings::migrate_legacy_credentials(app.state::<Db>().inner()) {
@@ -124,6 +134,7 @@ pub fn run() {
             commands::snap_window_to_work_area,
             commands::get_window_state,
             commands::get_migration_status,
+            commands::get_database_recovery_notice,
             commands::get_layout,
             commands::set_layout,
             commands::get_usage_history,
@@ -155,8 +166,17 @@ fn report_startup_failure(error: &str) {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::ffi::OsStrExt;
+        let recovery_hint = if message.to_ascii_lowercase().contains("locked")
+            || message.to_ascii_lowercase().contains("busy")
+        {
+            "数据库当前被其他实例占用，请关闭其他 AI API Monitor 进程后重试。"
+        } else {
+            "原数据库已保留；请查看日志，必要时从 migration-snapshots 恢复。"
+        };
         let text: Vec<u16> = format!(
-            "AI API Monitor 无法启动。请确认当前账户可访问应用数据目录。\n\n日志：{}",
+            "AI API Monitor 无法安全启动。\n\n原因：{}\n{}\n\n日志：{}",
+            message,
+            recovery_hint,
             fallback.join("application.log").display()
         )
         .encode_utf16()

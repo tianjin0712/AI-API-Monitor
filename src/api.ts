@@ -71,6 +71,7 @@ export const api = {
   snapWindowToWorkArea: () => invoke<void>("snap_window_to_work_area"),
   getWindowState: () => invoke<WindowState>("get_window_state"),
   getMigrationStatus: () => invoke<number | null>("get_migration_status"),
+  getDatabaseRecoveryNotice: () => invoke<string | null>("get_database_recovery_notice"),
 
   // ---- V0.3 DIY UI ----
   getLayout: () => invoke<string | null>("get_layout"),

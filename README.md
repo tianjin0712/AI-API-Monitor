@@ -12,7 +12,7 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 
 ## Windows 安装验收
 
-已完成 Windows 安装版实际验收：安装、启动、Dashboard、Provider 管理与刷新、主题资源、托盘与悬浮窗、设置持久化、开机自启及用户数据隔离均可正常使用。普通用户使用安装包时无需安装 Node.js、pnpm、Rust、Cargo、Python 或 Git。
+已完成 Windows 安装版实际验收：安装、启动、Dashboard、Provider 管理与刷新、主题资源、托盘与悬浮窗、设置持久化、开机自启、置顶、拖拽、多显示器和不同 DPI 缩放均可正常使用。Codex Runtime 子进程已验证不再弹出控制台。普通用户使用安装包时无需安装 Node.js、pnpm、Rust、Cargo、Python 或 Git。
 
 安装与发布流程见 [Windows 发布说明](./docs/RELEASE.md)。
 
@@ -51,7 +51,7 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - 状态由 Rust `window_mode.rs` 管理，React 通过 `window-mode-changed` 同步；几何位置按模式保存。
 - 托盘支持模式切换、显示/隐藏、退出；Tooltip 使用独立窗口并进行屏幕边界夹紧。
 - 已解决：托盘切换与 React 状态不同步、Mini/Ball 位置持久化和 Tooltip 基础定位。
-- 当前问题：真实多屏、DPI 缩放、拖动/点击/双击冲突仍需 Windows/macOS 真机手测。
+- Windows 已实测：托盘、Full/Mini/Ball 切换、关闭到托盘、开机自启、置顶、拖拽、多显示器及不同 DPI 缩放均正常；Codex Runtime 子进程不再弹出控制台。macOS 的窗口、DPI、多屏与交互仍需真机手测。
 
 ### 主题系统
 
@@ -84,6 +84,11 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - 更完整的日报/周报/月报、成本预测和跨设备配置同步。
 
 ## Changelog
+
+### 2026-08-17
+
+- Windows 实测通过托盘、Full/Mini/Ball 切换、关闭到托盘、开机自启、置顶、拖拽、多显示器和不同 DPI 缩放。
+- Codex Runtime 的 `login status` 与 `app-server` 子进程改为 Windows 无控制台创建；安装版已验证不再反复弹出空白控制台窗口。
 
 ### 2026-08-16
 
