@@ -1,7 +1,7 @@
 {
   "name": "ai-api-monitor",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.4",
   "packageManager": "pnpm@11.21.0",
   "engines": {
     "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
@@ -19,6 +19,7 @@
     "security:audit": "pnpm audit --prod --registry=https://registry.npmjs.org && pnpm rust:audit",
     "check": "pnpm typecheck && pnpm test && pnpm rust:fmt && pnpm rust:clippy && pnpm rust:test",
     "preview": "vite preview",
+    "version:sync": "node tools/sync-version.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

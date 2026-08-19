@@ -54,7 +54,7 @@ dependencies = [
 
 [[package]]
 name = "ai-api-monitor"
-version = "0.1.0"
+version = "1.0.4"
 dependencies = [
  "aes-gcm",
  "async-trait",
