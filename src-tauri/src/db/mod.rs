@@ -572,10 +572,8 @@ mod tests {
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .find(|path| {
-                path.file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .contains(".recovery-")
+                let file_name = path.file_name().unwrap().to_string_lossy();
+                file_name.contains(".recovery-") && file_name.ends_with(".db")
             })
             .expect("原始数据库必须保留为 recovery 文件");
         assert_eq!(std::fs::read(&recovery).unwrap(), original);
