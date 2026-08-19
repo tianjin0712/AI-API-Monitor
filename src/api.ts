@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CustomTestResult,
   DailyUsage,
   DeleteResult,
   Prediction,
@@ -31,6 +32,7 @@ export const api = {
     providerType: string;
     apiUrl: string;
     apiKey: string;
+    customConfig?: string | null;
   }) => invoke<ProviderConfig>("add_provider", input),
 
   updateProvider: (input: {
@@ -38,6 +40,7 @@ export const api = {
     name: string;
     apiUrl: string;
     apiKey?: string | null;
+    customConfig?: string | null;
   }) => invoke<ProviderConfig>("update_provider", input),
 
   deleteProvider: (id: number) => invoke<DeleteResult>("delete_provider", { id }),
@@ -47,6 +50,8 @@ export const api = {
     invoke<boolean>("is_custom_endpoint_approved", { apiUrl }),
   approveCustomEndpoint: (apiUrl: string) =>
     invoke<string>("approve_custom_endpoint", { apiUrl }),
+  testCustomProvider: (customConfig: string, secret?: string | null) =>
+    invoke<CustomTestResult>("test_custom_provider", { customConfig, secret }),
 
   refreshProvider: (id: number) =>
     invoke<ProviderUsage>("refresh_provider", { id }),
