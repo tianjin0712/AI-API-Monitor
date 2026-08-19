@@ -8,6 +8,7 @@ use super::{
     CodexRateLimitWindow, CodexUsageDetails, ProviderAdapter, ProviderConfig, ProviderError,
     ProviderUsage,
 };
+use crate::subprocess;
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader, Write};
@@ -86,11 +87,14 @@ fn runtime_source_label(source: RuntimeSource) -> &'static str {
 pub fn runtime_status() -> CodexRuntimeStatus {
     let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
     for runtime in &candidates {
-        let logged_in = Command::new(&runtime.executable)
+        let mut command = Command::new(&runtime.executable);
+        command
             .args(["login", "status"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::null());
+        subprocess::spawn_without_window(&mut command);
+        let logged_in = command
             .status()
             .map(|status| status.success())
             .unwrap_or(false);
@@ -117,11 +121,14 @@ pub fn start_login() -> Result<(), ProviderError> {
         .into_iter()
         .next()
         .ok_or_else(|| ProviderError::Api("未安装 ChatGPT/Codex Desktop 或 Codex CLI".into()))?;
-    Command::new(runtime.executable)
+    let mut command = Command::new(runtime.executable);
+    command
         .arg("login")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    subprocess::spawn_without_window(&mut command);
+    command
         .spawn()
         .map(|_| ())
         .map_err(|_| ProviderError::Api("无法启动 Codex 官方登录流程".into()))
@@ -136,13 +143,14 @@ pub fn start_rate_limit_monitor(app: tauri::AppHandle) {
             let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
             let mut connected = false;
             for runtime in candidates {
-                let Ok(mut child) = Command::new(&runtime.executable)
+                let mut command = Command::new(&runtime.executable);
+                command
                     .arg("app-server")
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
-                    .stderr(Stdio::null())
-                    .spawn()
-                else {
+                    .stderr(Stdio::null());
+                subprocess::spawn_without_window(&mut command);
+                let Ok(mut child) = command.spawn() else {
                     continue;
                 };
                 let Some(stdout) = child.stdout.take() else {
@@ -343,11 +351,14 @@ fn apply_account_usage(usage: &mut ProviderUsage, response: &Value) {
 fn fetch_from_runtime(
     runtime: &super::desktop_runtime::ResolvedRuntime,
 ) -> Result<ProviderUsage, ProviderError> {
-    let mut child = Command::new(&runtime.executable)
+    let mut command = Command::new(&runtime.executable);
+    command
         .arg("app-server")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    subprocess::spawn_without_window(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|_| ProviderError::Api("无法启动 Codex Runtime".into()))?;
     let stdout = child

@@ -7,6 +7,7 @@ mod providers;
 mod security;
 mod settings;
 mod storage;
+mod subprocess;
 mod window_mode;
 
 #[cfg(test)]
