@@ -22,7 +22,7 @@ pnpm build
 pnpm tauri build
 ```
 
-`pnpm check` 会执行 TypeScript、Vitest、Rust fmt、Clippy 和 Rust 测试。macOS 构建会使用 `src-tauri/tauri.conf.json` 中的通用配置和 macOS 图标；Windows 专用依赖由 Cargo 条件编译控制。
+`pnpm check` 会执行 TypeScript、Vitest、Rust fmt/check/Clippy 和 Rust 测试。macOS 构建会使用 `src-tauri/tauri.conf.json` 中的通用配置和 macOS 图标；Windows 专用依赖由 Cargo 条件编译控制。
 
 ## 项目目录结构
 

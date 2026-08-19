@@ -46,7 +46,7 @@ pnpm tauri build
 现有检查命令：
 
 ```bash
-pnpm check             # 类型检查、前端测试、fmt、Clippy、Rust 测试
+pnpm check             # 类型检查、前端测试、Rust fmt/check/Clippy/测试
 pnpm build             # 前端生产构建
 ```
 

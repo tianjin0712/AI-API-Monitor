@@ -555,8 +555,6 @@ mod tests {
         let path = root.join("ai-api-monitor.db");
         let original = b"INVALID_SQLITE_DATABASE";
         std::fs::write(&path, original).unwrap();
-        std::fs::write(format!("{}-wal", path.display()), b"old wal").unwrap();
-        std::fs::write(format!("{}-shm", path.display()), b"old shm").unwrap();
 
         let db = Db::open(&path).expect("corrupt database should recover into a clean database");
         assert!(db.recovery_notice().is_some());
@@ -577,6 +575,26 @@ mod tests {
             })
             .expect("原始数据库必须保留为 recovery 文件");
         assert_eq!(std::fs::read(&recovery).unwrap(), original);
+        assert!(!std::fs::read(&path).unwrap().starts_with(original));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preserve_corrupt_database_moves_existing_sidecars() {
+        let root = std::env::temp_dir().join(format!(
+            "ai-monitor-db-preserve-sidecars-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("ai-api-monitor.db");
+        let recovery = root.join("recovery.db");
+        std::fs::write(&path, b"database").unwrap();
+        std::fs::write(format!("{}-wal", path.display()), b"old wal").unwrap();
+        std::fs::write(format!("{}-shm", path.display()), b"old shm").unwrap();
+
+        preserve_corrupt_database(&path, &recovery).unwrap();
+
+        assert_eq!(std::fs::read(&recovery).unwrap(), b"database");
         assert_eq!(
             std::fs::read(format!("{}-wal", recovery.display())).unwrap(),
             b"old wal"
@@ -585,7 +603,7 @@ mod tests {
             std::fs::read(format!("{}-shm", recovery.display())).unwrap(),
             b"old shm"
         );
-        assert!(!std::fs::read(&path).unwrap().starts_with(original));
+        assert!(!path.exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

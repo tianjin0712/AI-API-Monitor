@@ -13,11 +13,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --check",
+    "rust:check": "cargo check --manifest-path src-tauri/Cargo.toml --all-targets --all-features",
     "rust:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings",
     "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
     "rust:audit": "cargo audit --file src-tauri/Cargo.lock",
     "security:audit": "pnpm audit --prod --registry=https://registry.npmjs.org && pnpm rust:audit",
-    "check": "pnpm typecheck && pnpm test && pnpm rust:fmt && pnpm rust:clippy && pnpm rust:test",
+    "check": "pnpm typecheck && pnpm test && pnpm rust:fmt && pnpm rust:check && pnpm rust:clippy && pnpm rust:test",
     "preview": "vite preview",
     "version:sync": "node tools/sync-version.mjs",
     "tauri": "tauri"
