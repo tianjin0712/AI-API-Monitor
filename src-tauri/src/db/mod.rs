@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 const OPEN_RETRIES: usize = 8;
 const SNAPSHOT_LIMIT: usize = 5;
 
@@ -383,6 +383,13 @@ fn migrate_inner(conn: &Connection) -> rusqlite::Result<()> {
         conn.pragma_update(None, "user_version", version)?;
     }
 
+    if version < 7 {
+        // V7: providers 增加 custom_config（通用自定义 API 的非敏感配置 JSON；可为空）。
+        conn.execute_batch("ALTER TABLE providers ADD COLUMN custom_config TEXT;")?;
+        version = 7;
+        conn.pragma_update(None, "user_version", version)?;
+    }
+
     Ok(())
 }
 
@@ -397,7 +404,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         let tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_master WHERE type='table'")
             .unwrap()
@@ -418,7 +425,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
     }
 
     #[test]
@@ -461,7 +468,7 @@ mod tests {
         let version: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(version, 6);
+        assert_eq!(version, 7);
         // 数据保留：tokens/cost/balance 原样，today_tokens 为 NULL（未知）
         let (tokens, today_tokens, cost, balance): (i64, Option<i64>, f64, f64) = conn
             .query_row(
@@ -535,7 +542,7 @@ mod tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
                 .unwrap(),
-            6
+            7
         );
 
         // 删除 provider，usage_history 应级联清空
