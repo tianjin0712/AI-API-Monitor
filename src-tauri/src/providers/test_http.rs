@@ -141,6 +141,16 @@ impl MockServer {
 
     /// 已收到的请求行（如 `GET /user/balance HTTP/1.1`），按连接到达顺序。
     pub fn request_lines(&self) -> Vec<String> {
+        self.requests
+            .lock()
+            .expect("requests lock")
+            .iter()
+            .map(|head| head.lines().next().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// 已收到的完整请求头（请求行 + headers），按连接到达顺序。
+    pub fn request_heads(&self) -> Vec<String> {
         self.requests.lock().expect("requests lock").clone()
     }
 }
@@ -165,7 +175,11 @@ fn handle_connection(
     }
     let path = request_head
         .as_deref()
-        .and_then(|head| head.split_whitespace().nth(1))
+        .and_then(|head| {
+            head.lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+        })
         .unwrap_or("")
         .to_string();
 
@@ -239,5 +253,5 @@ fn read_request_head(stream: &mut TcpStream) -> Option<String> {
     }
     String::from_utf8(head)
         .ok()
-        .map(|text| text.lines().next().unwrap_or_default().to_string())
+        .map(|text| text.trim_end_matches("\r\n").to_string())
 }

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 
 pub mod claude;
 pub mod codex;
+pub mod custom;
 pub mod deepseek;
 pub mod desktop_runtime;
 /// 暂未注册（官方无公开余额/用量查询端点）；保留实现与说明供未来启用。
@@ -46,7 +47,20 @@ pub struct ProviderUsage {
     pub reset_time: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub codex: Option<CodexUsageDetails>,
+    /// 自定义 API 的原始额度结果（仅 custom 类型提供）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom: Option<CustomUsageDetails>,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomUsageDetails {
+    pub remaining: Option<f64>,
+    pub total: Option<f64>,
+    pub used: Option<f64>,
+    /// token / count / currency / custom
+    pub unit: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,6 +109,7 @@ impl ProviderUsage {
             remaining: None,
             reset_time: None,
             codex: None,
+            custom: None,
             updated_at: String::new(),
         }
     }
@@ -114,6 +129,8 @@ pub struct ProviderConfig {
     /// Non-sensitive UI representation, for example `sk-****1234`.
     pub key_hint: String,
     pub enabled: bool,
+    /// 通用自定义 API 的非敏感配置 JSON（仅 custom 类型使用；敏感值经 keyring）。
+    pub custom_config: Option<String>,
     pub created_time: String,
     pub updated_time: String,
 }
@@ -208,8 +225,8 @@ impl ProviderManager {
         let mut registry: HashMap<String, Box<dyn ProviderAdapter>> = HashMap::new();
         registry.insert("deepseek".into(), Box::new(deepseek::DeepSeekProvider));
         registry.insert("openai".into(), Box::new(openai::OpenAIProvider));
-        // custom 仅复用 OpenAI Organization Admin Usage/Costs 协议，并非通用 Chat Completions 兼容层。
-        registry.insert("custom".into(), Box::new(openai::OpenAIProvider));
+        // custom 现为真正的通用自定义 API 适配器（可配置方法/URL/认证/响应映射）。
+        registry.insert("custom".into(), Box::new(custom::CustomProvider));
         registry.insert("codex".into(), Box::new(codex::CodexProvider));
         registry.insert(
             "openrouter".into(),

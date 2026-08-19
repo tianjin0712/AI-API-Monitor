@@ -64,6 +64,7 @@ pub fn add_provider(
     provider_type: String,
     api_url: String,
     api_key: String,
+    custom_config: Option<String>,
 ) -> Result<ProviderConfig, AppError> {
     let api_key = zeroize::Zeroizing::new(api_key);
     settings::add_provider(
@@ -73,6 +74,7 @@ pub fn add_provider(
         &provider_type,
         &api_url,
         api_key.as_str(),
+        custom_config.as_deref(),
     )
 }
 
@@ -85,6 +87,7 @@ pub fn update_provider(
     name: String,
     api_url: String,
     api_key: Option<String>,
+    custom_config: Option<String>,
 ) -> Result<ProviderConfig, AppError> {
     let api_key = api_key.map(zeroize::Zeroizing::new);
     settings::update_provider(
@@ -94,6 +97,7 @@ pub fn update_provider(
         &name,
         &api_url,
         api_key.as_ref().map(|value| value.as_str()),
+        custom_config.as_deref(),
     )
 }
 
@@ -231,6 +235,23 @@ pub async fn start_codex_login() -> Result<(), AppError> {
         .await
         .map_err(|_| AppError::Invalid("Codex 登录任务启动失败".into()))?
         .map_err(|error| AppError::Invalid(error.to_string()))
+}
+
+/// 测试自定义 API 连接：发送请求并返回脱敏后的解析结果。
+/// 不写入用量历史，也不改动任何 Provider 配置。
+#[tauri::command]
+pub async fn test_custom_provider(
+    custom_config: String,
+    secret: Option<String>,
+) -> Result<crate::providers::custom::CustomTestResult, AppError> {
+    let secret = zeroize::Zeroizing::new(secret.unwrap_or_default());
+    crate::providers::custom::test_connection(&custom_config, secret.as_str())
+        .await
+        .map_err(|error| {
+            AppError::Invalid(crate::security::SensitiveDataFilter::redact(
+                &error.to_string(),
+            ))
+        })
 }
 
 /// 单个 Provider 的刷新结果（成功/失败均返回，前端据此展示可信度）。

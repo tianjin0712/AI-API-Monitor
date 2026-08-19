@@ -10,6 +10,7 @@
 //! 独立测试中验证，此处只验证 Provider 适配器在合法传输层上的行为。
 
 use super::claude;
+use super::custom;
 use super::deepseek;
 use super::openai;
 use super::openrouter;
@@ -32,6 +33,7 @@ fn provider_config(base: &str, provider_type: &str) -> ProviderConfig {
         key_ref: "keyring:key_mock".into(),
         key_hint: "sk-****1234".into(),
         enabled: true,
+        custom_config: None,
         created_time: String::new(),
         updated_time: String::new(),
     }
@@ -715,4 +717,260 @@ async fn openai_connection_drop_is_http_error() {
         .fetch_usage_with_client(&config, "sk-test", &test_client(5))
         .await;
     assert!(is_http_error(&result), "{result:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Custom（通用自定义 API）
+// ---------------------------------------------------------------------------
+
+fn custom_provider_config(config_json: &str) -> ProviderConfig {
+    ProviderConfig {
+        id: 1,
+        name: "custom-mock".into(),
+        provider_type: "custom".into(),
+        api_url: "https://example.invalid".into(),
+        key_ref: "keyring:key_mock".into(),
+        key_hint: "****1234".into(),
+        enabled: true,
+        custom_config: Some(config_json.to_string()),
+        created_time: String::new(),
+        updated_time: String::new(),
+    }
+}
+
+fn custom_json(url: &str, method: &str, auth: &str, mapping: &str, unit: &str) -> String {
+    format!(
+        r#"{{"url":"{url}","method":"{method}","query":[],"headers":[],"auth":{auth},"responseMapping":{mapping},"unit":"{unit}"}}"#
+    )
+}
+
+#[tokio::test]
+async fn custom_bearer_get_parses_remaining() {
+    let server = MockServer::start(vec![MockResponse::json(
+        200,
+        r#"{"data":{"remaining":42}}"#,
+    )]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"bearer"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let usage = custom::CustomProvider
+        .fetch_usage_with_client(&config, "sk-test", &test_client(5))
+        .await
+        .expect("fetch ok");
+    assert_eq!(usage.remaining, Some(42.0));
+    assert_eq!(usage.custom.as_ref().unwrap().unit, "token");
+    assert!(server.request_heads().iter().any(|h| h
+        .to_ascii_lowercase()
+        .contains("authorization: bearer sk-test")));
+}
+
+#[tokio::test]
+async fn custom_api_key_header_is_sent() {
+    let server = MockServer::start(vec![MockResponse::json(200, r#"{"data":{"remaining":1}}"#)]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"apiKey","headerName":"X-My-Key"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "count",
+    );
+    let config = custom_provider_config(&cfg);
+    let _ = custom::CustomProvider
+        .fetch_usage_with_client(&config, "secret123", &test_client(5))
+        .await
+        .expect("fetch ok");
+    assert!(server
+        .request_heads()
+        .iter()
+        .any(|h| h.to_ascii_lowercase().contains("x-my-key: secret123")));
+}
+
+#[tokio::test]
+async fn custom_custom_header_and_extra_headers_are_sent() {
+    let server = MockServer::start(vec![MockResponse::json(200, r#"{"data":{"remaining":1}}"#)]);
+    let cfg = format!(
+        r#"{{"url":"{}","method":"GET","query":[],"headers":[{{"key":"X-Extra","value":"v1"}}],"auth":{{"type":"customHeader","headerName":"X-Auth"}},"responseMapping":{{"remainingPath":"data.remaining"}},"unit":"custom"}}"#,
+        server.base_url()
+    );
+    let config = custom_provider_config(&cfg);
+    let _ = custom::CustomProvider
+        .fetch_usage_with_client(&config, "token-x", &test_client(5))
+        .await
+        .expect("fetch ok");
+    let head = server
+        .request_heads()
+        .into_iter()
+        .find(|h| h.to_ascii_lowercase().starts_with("get "))
+        .unwrap();
+    let lower = head.to_ascii_lowercase();
+    assert!(lower.contains("x-auth: token-x"), "{lower}");
+    assert!(lower.contains("x-extra: v1"), "{lower}");
+}
+
+#[tokio::test]
+async fn custom_post_sends_json_body() {
+    let server = MockServer::start(vec![MockResponse::json(200, r#"{"data":{"remaining":5}}"#)]);
+    let cfg = format!(
+        r#"{{"url":"{}","method":"POST","query":[],"headers":[],"body":"{{\"q\":\"x\"}}","auth":{{"type":"none"}},"responseMapping":{{"remainingPath":"data.remaining"}},"unit":"token"}}"#,
+        server.base_url()
+    );
+    let config = custom_provider_config(&cfg);
+    let _ = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await
+        .expect("fetch ok");
+    let head = server
+        .request_heads()
+        .into_iter()
+        .find(|h| h.to_ascii_lowercase().starts_with("post "))
+        .unwrap();
+    assert!(
+        head.to_ascii_lowercase()
+            .contains("content-type: application/json"),
+        "{head}"
+    );
+    assert!(head.contains(r#"{"q":"x"}"#), "{head}");
+}
+
+#[tokio::test]
+async fn custom_query_params_are_url_encoded() {
+    let server = MockServer::start(vec![MockResponse::json(200, r#"{"data":{"remaining":1}}"#)]);
+    let cfg = format!(
+        r#"{{"url":"{}","method":"GET","query":[{{"key":"a b","value":"c&d"}}],"headers":[],"auth":{{"type":"none"}},"responseMapping":{{"remainingPath":"data.remaining"}},"unit":"custom"}}"#,
+        server.base_url()
+    );
+    let config = custom_provider_config(&cfg);
+    let _ = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await
+        .expect("fetch ok");
+    let line = server
+        .request_lines()
+        .into_iter()
+        .find(|l| l.starts_with("GET "))
+        .unwrap();
+    assert!(line.contains("a+b=c%26d"), "{line}");
+}
+
+#[tokio::test]
+async fn custom_total_minus_used_computes_remaining() {
+    let server = MockServer::start(vec![MockResponse::json(
+        200,
+        r#"{"data":{"total":50,"used":20}}"#,
+    )]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"none"}"#,
+        r#"{"totalPath":"data.total","usedPath":"data.used"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let usage = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await
+        .expect("fetch ok");
+    assert_eq!(usage.remaining, Some(30.0));
+}
+
+#[tokio::test]
+async fn custom_unauthorized_is_auth_error() {
+    let server = MockServer::start(vec![MockResponse::json(401, "{}")]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"bearer"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let result = custom::CustomProvider
+        .fetch_usage_with_client(&config, "sk-test", &test_client(5))
+        .await;
+    assert!(
+        api_error_contains(&result, "authentication failed"),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn custom_forbidden_is_auth_error() {
+    let server = MockServer::start(vec![MockResponse::json(403, "{}")]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"bearer"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let result = custom::CustomProvider
+        .fetch_usage_with_client(&config, "sk-test", &test_client(5))
+        .await;
+    assert!(
+        api_error_contains(&result, "authentication failed"),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn custom_non_json_body_is_parse_error() {
+    let server = MockServer::start(vec![MockResponse::json(200, "<html>bad</html>")]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"none"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let result = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await;
+    assert!(
+        api_error_contains(&result, "响应不是合法 JSON"),
+        "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn custom_missing_field_is_explicit_error() {
+    let server = MockServer::start(vec![MockResponse::json(200, r#"{"data":{}}"#)]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"none"}"#,
+        r#"{"remainingPath":"data.balance"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let result = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await;
+    assert!(api_error_contains(&result, "缺少字段"), "{result:?}");
+}
+
+#[tokio::test]
+async fn custom_negative_number_is_error() {
+    let server = MockServer::start(vec![MockResponse::json(
+        200,
+        r#"{"data":{"remaining":-5}}"#,
+    )]);
+    let cfg = custom_json(
+        &server.base_url(),
+        "GET",
+        r#"{"type":"none"}"#,
+        r#"{"remainingPath":"data.remaining"}"#,
+        "token",
+    );
+    let config = custom_provider_config(&cfg);
+    let result = custom::CustomProvider
+        .fetch_usage_with_client(&config, "", &test_client(5))
+        .await;
+    assert!(api_error_contains(&result, "数值为负"), "{result:?}");
 }
