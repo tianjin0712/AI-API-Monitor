@@ -1,6 +1,6 @@
 # AI API Monitor 手工安全操作手册
 
-适用项目：`E:\Project\Token_Number`  
+适用项目：AI API Monitor 项目根目录
 适用版本：Tauri 2 / React 19 / Rust 1.97.1  
 执行原则：任何私钥、证书密码、API Key 都不得粘贴到聊天、Issue、日志或提交到 Git。
 
@@ -9,7 +9,7 @@
 在 PowerShell 中进入项目：
 
 ```powershell
-Set-Location E:\Project\Token_Number
+Set-Location "<项目根目录>"
 pnpm install --frozen-lockfile
 pnpm check
 pnpm build
@@ -37,7 +37,7 @@ cargo audit --version
 ### 2.2 执行统一审计
 
 ```powershell
-Set-Location E:\Project\Token_Number
+Set-Location "<项目根目录>"
 pnpm security:audit
 ```
 
@@ -448,7 +448,7 @@ stat -c '%A %a %n' "$DATA_ROOT/ai-api-monitor.db"
 正式发布前执行：
 
 ```powershell
-Set-Location E:\Project\Token_Number
+Set-Location "<项目根目录>"
 git diff --check
 git status --short
 pnpm check

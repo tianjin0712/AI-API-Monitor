@@ -3,6 +3,8 @@
 测试日期：2026-08-13  
 测试环境：Windows / Rust 1.97.1 / Node + pnpm / Tauri 2
 
+> 本报告是 2026-08-13 的历史自动化测试快照，不代表当前 HEAD 或任何 Tag 的完整发布验收。2026-08-14 的 `TODO_LIST.md` 记录过一次 `cargo-audit`/`pnpm security:audit` 成功执行；数据库恢复、真实系统凭据库、三平台数据目录和生产 updater 仍需按当前版本重新人工验收。
+
 ## 测试矩阵
 
 | ID | 验证目标 | 自动化证据 | 结果 |
@@ -33,7 +35,7 @@
 - 日志静态检查：未发现 Provider 响应正文、完整 Key、Bearer、Cookie 或 Token 的直接输出路径。
 - 前端生产构建：PASS；产物扫描仅命中 UI 中的示例前缀 `sk-ant-admin01-`，未发现真实 Key/Token。
 - 前端依赖审计：官方 npm registry 最终报告 `No known vulnerabilities found`（首次连接发生超时重试）。
-- Rust 依赖审计：已加入 `pnpm rust:audit`、`pnpm security:audit` 与 CI RustSec 阻断任务；本机未安装 `cargo-audit`，需由 CI 或安装后执行。
+- Rust 依赖审计：本次 2026-08-13 测试环境未安装 `cargo-audit`；后续 2026-08-14 的历史记录显示其已执行。每次发布仍须在目标提交重新运行 `pnpm security:audit`，不能引用本报告替代当前结果。
 
 ## 手工发布前检查
 

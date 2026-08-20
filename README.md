@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。项目当前处于 V0.5/V1.0-alpha 之间：Windows 安装版已完成实际安装验收，macOS 真机验证与签名发布仍待完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.6`；当前 `origin/master` 另有 4 个未打 Tag 的自定义 API Provider 提交，因此不能将 `v1.0.6` 视为当前开发主线版本。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
 
 ## 项目简介
 
@@ -8,7 +8,8 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - **已支持 Provider**：DeepSeek、OpenAI、Codex、OpenRouter、Claude、SiliconFlow；Gemini 适配器保留但未注册（官方公开查询端点不足）。
 - **技术栈**：Tauri 2、Rust 2021、React 19、TypeScript、Vite 7、Tailwind CSS 4、SQLite（WAL/迁移）、reqwest、tokio、keyring。
 - **开发环境**：Node.js 20.19+（或 22.12+）、pnpm 11、Rust stable、对应平台的 Tauri WebView/构建工具。
-- **当前状态**：Windows 安装包已在实际安装环境验证，安装后全部现有功能可正常使用；macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
+- **当前状态**：Windows 安装包已在实际安装环境验证，安装后核心日常功能可正常使用；数据库恢复与迁移安全仍需完整人工复验。macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
+- **发布口径**：发布前必须保证 Git Tag、`package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本一致；下一次发布应先合并当前未打 Tag 的主线提交，再按实际发布版本同步受控 manifest。
 
 ## Windows 安装验收
 
@@ -62,20 +63,22 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 ### 设置系统
 
 - 已实现 Provider 添加/编辑/删除、刷新间隔、主题、Widget 布局、置顶、关闭行为、自动启动和更新检查入口。
-- 待完善：旧凭据迁移、删除失败恢复提示、诊断导出、数据库备份/恢复、自动更新生产公钥和端点。
+- 已实现但待真实环境验收：旧凭据 UUID 迁移、凭据删除失败补偿、数据库损坏安全启动、迁移前快照。
+- 待完善：诊断导出、面向用户的数据库备份/恢复入口、自动更新生产公钥和端点。
 
 ## TODO
 
 ### 高优先级
 
-- 在 Windows 与 macOS 真机完成窗口、托盘、通知、Keychain/Credential Manager 和多屏回归。
+- 完成数据库恢复、迁移快照、凭据迁移/补偿与敏感数据泄漏的发布前人工验收；恢复并追踪对应验收清单。
+- 完成 macOS/Linux 真机的窗口、通知、Keychain/Secret Service、DPI 和多屏回归；Windows 在发布前仅需针对恢复与升级场景复回归。
 - 为真实 Provider 账户补充权限、限流、分页、错误和 Codex CLI 版本兼容验证。
 - 配置自动更新生产公钥、HTTPS endpoint、签名产物，并完成篡改/降级验收。
 
 ### 中优先级
 
 - 完成完整 DIY UI 与桌面 E2E 测试，覆盖拖动、Tooltip、DPI 和窗口恢复。
-- 增加旧凭据迁移、删除失败补偿、诊断导出及数据库备份/恢复。
+- 为既有旧凭据迁移和删除失败补偿补齐故障注入与真实凭据库验收；实现诊断导出及面向用户的数据库备份/恢复。
 - 统一文档中的 Full/Mini/Ball 与 MAIN/FLOAT_SQUARE/FLOAT_EXPANDED 命名，减少产品层歧义。
 
 ### 低优先级
@@ -84,6 +87,12 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - 更完整的日报/周报/月报、成本预测和跨设备配置同步。
 
 ## Changelog
+
+### 2026-08-19
+
+- 数据库损坏恢复测试修正 Windows 下 recovery 主数据库与 WAL/SHM sidecar 的文件匹配。
+- 增加版本同步工具和 `cargo check` 门禁；后续发布仍须在打 Tag 后验证受控 manifest 与安装包版本一致。
+- Codex Windows 子进程统一使用无控制台创建方式；Windows 安装版已验证不再弹出空白控制台。
 
 ### 2026-08-17
 
