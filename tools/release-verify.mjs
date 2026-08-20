@@ -10,6 +10,18 @@ function git(args) {
   return execFileSync("git", args, { encoding: "utf8", cwd: root }).trim();
 }
 
+function tryGit(args) {
+  try {
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      cwd: root,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
 function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
@@ -45,11 +57,7 @@ if (subject !== expectedSubject) {
 
 const head = git(["rev-parse", "HEAD"]);
 let tagObject;
-try {
-  tagObject = git(["cat-file", "-t", `refs/tags/${tag}`]);
-} catch {
-  tagObject = "";
-}
+tagObject = tryGit(["cat-file", "-t", `refs/tags/${tag}`]);
 
 if (requireTag) {
   if (tagObject !== "tag") {
