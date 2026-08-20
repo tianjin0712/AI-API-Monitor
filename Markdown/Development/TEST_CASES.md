@@ -40,6 +40,21 @@
 | TC-019 | P0 | 编辑账户但不更换 API Key | 已有可正常刷新的非 Codex 账户 | 1. 点击“编辑”；2. 修改名称或 HTTPS URL；3. Key 留空；4. 保存；5. 刷新 | 修改成功；原 API Key 继续有效；名称/URL 更新；Key 留空不会清除或替换原凭据 |
 | TC-020 | P0 | 编辑账户并更换 API Key | 已有账户，准备另一个有效 Key | 1. 编辑账户；2. 输入新 Key；3. 保存并刷新 | 新 Key 生效；旧 Key 不再被该账户使用；设置列表和前端接口均不展示 Key 明文 |
 
+## 3.1 通用自定义 API（TC-051～TC-060）
+
+| 编号 | 优先级 | 场景 | 前置条件 | 操作步骤 | 预期结果 |
+|---|---|---|---|---|---|
+| TC-051 | P0 | Bearer + GET 自定义 API | 准备返回 JSON 额度的 HTTPS 接口 | 类型选 `custom`，方法 GET，认证 Bearer，配置 remainingPath，测试连接后保存并刷新 | 测试连接显示剩余额度与单位；刷新后进入 Dashboard，按单位展示剩余额度而非百分比 |
+| TC-052 | P1 | API Key Header 自定义 API | 接口要求 `X-API-Key` 头 | 认证选 API Key Header，配置 Header 名与 Key，保存并刷新 | 请求携带正确 Header；额度正常解析；Key 不落 SQLite 明文 |
+| TC-053 | P1 | POST + JSON Body | 接口仅接受 POST | 方法 POST，填写 JSON Body，保存并刷新 | 请求为 POST 且携带 Body；GET 类型不发送 Body |
+| TC-054 | P1 | total - used 推导 remaining | 接口仅返回 total 与 used | 配置 totalPath 与 usedPath，不配置 remainingPath | remaining = total - used；used > total 时报错 |
+| TC-055 | P1 | 点路径嵌套与数组 | 响应为嵌套结构 | 配置 `data.items.0.value` 等路径 | 正确读取嵌套/数组字段；字段不存在或类型错误时报可读错误 |
+| TC-056 | P0 | 401/403/非 JSON 错误处理 | Mock 返回 401/403/非 JSON | 测试连接或刷新 | 返回明确认证/解析错误，不 panic、不泄露完整响应 |
+| TC-057 | P0 | 敏感值不落库/不落日志 | 配置含 Token 的自定义 API | 检查 SQLite providers 表、日志与前端 DTO | custom_config 不含 secret；key_ref 仅存引用；日志/错误不含完整 Token/Key |
+| TC-058 | P1 | 测试连接脱敏预览 | 响应含 authorization/token 字段 | 点「测试连接」查看响应结构 | 敏感字段值被遮蔽；可看到非敏感结构；不写入用量历史 |
+| TC-059 | P1 | 单位展示 | unit 分别为 token/count/currency/custom | 分别配置并刷新 | Dashboard/悬浮窗按对应单位展示剩余额度，不再强制显示百分比 |
+| TC-060 | P1 | 无认证自定义 API | 接口无需认证 | 认证选 none，不填凭据，保存并刷新 | 允许空凭据保存；请求不带认证头；其他类型仍强制要求凭据 |
+
 ## 4. 删除、刷新与异常恢复（TC-021～TC-032）
 
 | 编号 | 优先级 | 场景 | 前置条件 | 操作步骤 | 预期结果 |

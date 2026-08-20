@@ -148,7 +148,7 @@ export default function MiniBall({ onExpand, compact, visualTheme, avatarGif, ba
   const value = isCodexTokenQuota
     ? `${formatCount(codexTokenRemaining!)} Token`
     : usage?.remaining != null
-      ? `${formatMoney(usage.remaining)}%`
+      ? `${formatMoney(usage.remaining)}${usage.custom ? customUnitSuffix(usage.custom.unit) : "%"}`
     : usage?.balance != null
       ? `${formatMoney(usage.balance)} ${usage.currency}`
       : usage
@@ -228,4 +228,13 @@ export default function MiniBall({ onExpand, compact, visualTheme, avatarGif, ba
       <div className={`floating-inline-tooltip ${tooltipVisible ? "is-visible" : ""}`} aria-hidden="true">单击展开</div>
       </div>
   );
+}
+
+function customUnitSuffix(unit: string): string {
+  switch (unit) {
+    case "token": return " Token";
+    case "count": return " 次";
+    case "currency": return "";
+    default: return "";
+  }
 }

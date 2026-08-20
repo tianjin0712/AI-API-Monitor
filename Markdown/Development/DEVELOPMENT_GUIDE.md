@@ -68,6 +68,28 @@ Markdown/                    项目、测试、安全和审查文档
 
 API Key 只能进入系统凭据库，禁止写入 SQLite、普通日志、前端 DTO 或文档示例。
 
+## 通用自定义 API Provider
+
+`custom` 类型现为通用自定义 API 适配器（`src-tauri/src/providers/custom.rs`），不再复用 OpenAI Admin 协议。配置结构（非敏感部分，存 `providers.custom_config` JSON）：
+
+```text
+CustomApiConfig
+- url            请求完整 URL（https；本机 http 仅测试连接放行回环地址）
+- method         GET / POST
+- query          [{key, value}]，结构化 URL 编码
+- headers        [{key, value}]，认证头请用 auth 配置
+- body           JSON 字符串（仅 POST 发送）
+- auth           { type, headerName?, username? }
+- responseMapping { remainingPath?, totalPath?, usedPath?, resetTimePath? }
+- unit           token | count | currency | custom
+```
+
+认证方式（`auth.type`）：`bearer`（Authorization: Bearer）、`apiKey`（自定义/默认 `X-API-Key` 头）、`basic`（username + 密码，Base64）、`none`（无认证）、`customHeader`（自定义头名 + 值）。敏感值只经 `SecureStorage` 存入 keyring，SQLite 仅保存不可逆的 `key_ref`。
+
+JSON 响应字段用点路径读取（支持嵌套对象与数组索引，如 `data.items.0.value`），支持数字与数字字符串，拒绝负数/NaN/Infinity。余额计算：`remaining` 优先；否则 `total - used`；只有 total 或 used 时保留可用字段，不以 0 伪装未知。
+
+新增自定义 API 步骤：Settings → 类型选 `custom` → 填写名称、URL、方法、Query/Headers、认证、Body、字段映射、单位 → 点「测试连接」验证 → 保存。测试连接返回脱敏后的解析结果与响应结构预览，不写入历史。
+
 ## 主题系统位置
 
 - 主题状态与应用：`src/theme/applyTheme.ts`

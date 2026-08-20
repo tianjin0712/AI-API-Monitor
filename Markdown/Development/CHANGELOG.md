@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-19
+
+- 新增通用自定义 API Provider（`custom`）：可配置请求方法（GET/POST）、URL、Query、Headers、认证方式（Bearer / API Key Header / Basic Auth / 无认证 / 自定义 Header）、JSON Body、响应字段点路径映射（remaining/total/used/resetTime）与单位（Token/次数/金额/自定义）。
+- 新增测试连接能力（`test_custom_provider`），返回脱敏后的解析结果与响应结构预览，不写入用量历史、不改动 Provider 配置。
+- 敏感值（Token/Key/Basic 密码/自定义 Header 值）仅经系统 keyring 存储；非敏感配置存 SQLite `providers.custom_config`（schema V7）。
+- 扩展 JSON 递归脱敏与回环 HTTP 测试客户端；ProviderCard/MiniBall 按自定义单位展示剩余额度。
+
 ## 2026-08-13
 
 - 完成项目迁移准备并同步到 `F:\AI API Monitor`，保留 Git 信息和源代码、资源、文档、脚本、MCP/开发配置及构建配置。

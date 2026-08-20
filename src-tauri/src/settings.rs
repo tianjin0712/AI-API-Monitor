@@ -33,6 +33,13 @@ pub enum AppError {
     Invalid(String),
 }
 
+impl From<crate::providers::ProviderError> for AppError {
+    fn from(error: crate::providers::ProviderError) -> Self {
+        // 序列化给前端时统一经 SensitiveDataFilter 脱敏。
+        AppError::Invalid(error.to_string())
+    }
+}
+
 impl serde::Serialize for AppError {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&crate::security::SensitiveDataFilter::redact(
@@ -98,7 +105,7 @@ pub fn validate_provider_input(
 pub fn list_providers(db: &Db) -> Result<Vec<ProviderConfig>, AppError> {
     db.with_conn(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, custom_config, created_time, updated_time
              FROM providers ORDER BY id",
         )?;
         let rows = stmt.query_map([], row_to_provider)?;
@@ -111,7 +118,7 @@ pub fn list_providers(db: &Db) -> Result<Vec<ProviderConfig>, AppError> {
     .map_err(AppError::from)
 }
 
-/// 新增 Provider：API Key 先入 keyring，再写数据库。
+/// 新增 Provider：API Key/认证凭据先入 keyring，再写数据库。
 #[allow(clippy::too_many_arguments)]
 pub fn add_provider(
     db: &Db,
@@ -120,6 +127,7 @@ pub fn add_provider(
     provider_type: &str,
     api_url: &str,
     api_key: &str,
+    custom_config: Option<&str>,
 ) -> Result<ProviderConfig, AppError> {
     let name = name.trim();
     if name.is_empty() {
@@ -128,15 +136,46 @@ pub fn add_provider(
     if provider_type.is_empty() {
         return Err(AppError::Invalid("Provider 类型不能为空".into()));
     }
-    if api_key.is_empty() && provider_type != "codex" {
-        return Err(AppError::Invalid("API Key 不能为空".into()));
-    }
     validate_provider_input(manager, provider_type, api_url)?;
-    if provider_type == "custom" && !is_custom_endpoint_approved(db, api_url)? {
-        return Err(AppError::Invalid(
-            "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
-        ));
+
+    // custom 类型：解析并校验非敏感配置；请求 URL 以配置为准。
+    let custom_config_json: Option<String> = if provider_type == "custom" {
+        let json = custom_config.unwrap_or("").trim();
+        let cfg = crate::providers::custom::parse_custom_config(json)
+            .map_err(|e| AppError::Invalid(e.to_string()))?;
+        if !is_custom_endpoint_approved(db, &cfg.url)? {
+            return Err(AppError::Invalid(
+                "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
+            ));
+        }
+        Some(json.to_string())
+    } else {
+        None
+    };
+
+    // 密钥必要性：codex 无密钥；custom 的 none 认证无密钥；其余必须有。
+    let requires_secret = match provider_type {
+        "codex" => false,
+        "custom" => {
+            let cfg = crate::providers::custom::parse_custom_config(
+                custom_config_json.as_deref().unwrap_or(""),
+            )?;
+            cfg.auth.auth_type != crate::providers::custom::CustomAuthType::None
+        }
+        _ => true,
+    };
+    if requires_secret && api_key.is_empty() {
+        return Err(AppError::Invalid("认证凭据不能为空".into()));
     }
+
+    // 对 custom，以配置内的 url 作为最终 api_url，避免前后端不一致。
+    let effective_url = if provider_type == "custom" {
+        crate::providers::custom::parse_custom_config(custom_config_json.as_deref().unwrap_or(""))?
+            .url
+    } else {
+        api_url.to_string()
+    };
+
     // Codex 仅查询 CLI 公开登录状态，不读取认证文件，也不写入 keyring。
     let key_ref = if api_key.is_empty() {
         String::new()
@@ -148,9 +187,9 @@ pub fn add_provider(
     let now = Utc::now().to_rfc3339();
     let insert = db.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO providers (name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time)
-             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?6)",
-            rusqlite::params![name, provider_type, api_url, key_ref, key_hint, now],
+            "INSERT INTO providers (name, provider_type, api_url, key_ref, key_hint, enabled, custom_config, created_time, updated_time)
+             VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, ?7)",
+            rusqlite::params![name, provider_type, effective_url, key_ref, key_hint, custom_config_json, now],
         )?;
         Ok(conn.last_insert_rowid())
     });
@@ -166,16 +205,17 @@ pub fn add_provider(
         id,
         name: name.to_string(),
         provider_type: provider_type.to_string(),
-        api_url: api_url.to_string(),
+        api_url: effective_url,
         key_ref,
         key_hint,
         enabled: true,
+        custom_config: custom_config_json,
         created_time: now.clone(),
         updated_time: now,
     })
 }
 
-/// 更新 Provider（名称 / API URL / 可选 API Key）。
+/// 更新 Provider（名称 / API URL / 可选 API Key / 可选 custom 配置）。
 /// 先读旧状态，keyring 更新失败时回滚数据库修改（codereview P1 原子性）。
 pub fn update_provider(
     db: &Db,
@@ -184,13 +224,14 @@ pub fn update_provider(
     name: &str,
     api_url: &str,
     api_key: Option<&str>,
+    custom_config: Option<&str>,
 ) -> Result<ProviderConfig, AppError> {
     let now = Utc::now().to_rfc3339();
     // 读取旧记录（用于回滚）
     let old: ProviderConfig = db
         .with_conn(|conn| {
             conn.query_row(
-            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, custom_config, created_time, updated_time
              FROM providers WHERE id = ?1",
             [id],
             row_to_provider,
@@ -201,16 +242,32 @@ pub fn update_provider(
             other => AppError::Db(other),
         })?;
     validate_provider_input(manager, &old.provider_type, api_url)?;
-    if old.provider_type == "custom" && !is_custom_endpoint_approved(db, api_url)? {
-        return Err(AppError::Invalid(
-            "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
-        ));
-    }
+
+    // custom 类型：解析并校验新配置；URL 以配置为准。
+    let custom_config_json: Option<String> = if old.provider_type == "custom" {
+        let json = custom_config.unwrap_or("").trim();
+        let cfg = crate::providers::custom::parse_custom_config(json)
+            .map_err(|e| AppError::Invalid(e.to_string()))?;
+        if !is_custom_endpoint_approved(db, &cfg.url)? {
+            return Err(AppError::Invalid(
+                "自定义网关尚未获得用户明确批准，请确认目标域名后重试".into(),
+            ));
+        }
+        Some(json.to_string())
+    } else {
+        None
+    };
+    let effective_url = if old.provider_type == "custom" {
+        crate::providers::custom::parse_custom_config(custom_config_json.as_deref().unwrap_or(""))?
+            .url
+    } else {
+        api_url.to_string()
+    };
 
     db.with_conn(|conn| {
         let updated = conn.execute(
-            "UPDATE providers SET name = ?1, api_url = ?2, updated_time = ?3 WHERE id = ?4",
-            rusqlite::params![name, api_url, now, id],
+            "UPDATE providers SET name = ?1, api_url = ?2, custom_config = ?3, updated_time = ?4 WHERE id = ?5",
+            rusqlite::params![name, effective_url, custom_config_json, now, id],
         )?;
         if updated == 0 {
             return Err(rusqlite::Error::QueryReturnedNoRows);
@@ -228,8 +285,8 @@ pub fn update_provider(
             if let Err(e) = SecureStorage::update_api_key(&old.key_ref, key) {
                 let _ = db.with_conn(|conn| {
                     conn.execute(
-                        "UPDATE providers SET name = ?1, api_url = ?2, updated_time = ?3 WHERE id = ?4",
-                        rusqlite::params![old.name, old.api_url, now, id],
+                        "UPDATE providers SET name = ?1, api_url = ?2, custom_config = ?3, updated_time = ?4 WHERE id = ?5",
+                        rusqlite::params![old.name, old.api_url, old.custom_config, now, id],
                     )
                 });
                 return Err(AppError::Storage(e));
@@ -247,7 +304,7 @@ pub fn update_provider(
     // 返回更新后的完整记录
     db.with_conn(|conn| {
         conn.query_row(
-            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, created_time, updated_time
+            "SELECT id, name, provider_type, api_url, key_ref, key_hint, enabled, custom_config, created_time, updated_time
              FROM providers WHERE id = ?1",
             [id],
             row_to_provider,
@@ -641,8 +698,9 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProviderConfig> 
         key_ref: row.get(4)?,
         key_hint: row.get(5)?,
         enabled: row.get::<_, i64>(6)? != 0,
-        created_time: row.get(7)?,
-        updated_time: row.get(8)?,
+        custom_config: row.get(7)?,
+        created_time: row.get(8)?,
+        updated_time: row.get(9)?,
     })
 }
 

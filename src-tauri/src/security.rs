@@ -202,6 +202,104 @@ pub fn safe_http_status_error(status: reqwest::StatusCode) -> String {
     }
 }
 
+/// 递归脱敏 JSON 值（供“查看响应结构”使用）：敏感字段名（大小写不敏感）
+/// 对应的值替换为 `******`；字符串值中形如 Bearer / `sk-` / JWT 的内容也被遮蔽。
+/// 只返回结构 + 非敏感值，绝不复原完整凭据。
+pub fn redact_json(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut out = serde_json::Map::new();
+            for (key, value) in map {
+                if is_sensitive_field_name(key) {
+                    out.insert(key.clone(), serde_json::Value::String("******".into()));
+                } else {
+                    out.insert(key.clone(), redact_json(value));
+                }
+            }
+            serde_json::Value::Object(out)
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(redact_json).collect())
+        }
+        serde_json::Value::String(text) => {
+            serde_json::Value::String(SensitiveDataFilter::redact(text))
+        }
+        other => other.clone(),
+    }
+}
+
+/// 字段名是否承载敏感信息（大小写不敏感，覆盖常见的 key 命名风格）。
+fn is_sensitive_field_name(name: &str) -> bool {
+    let normalized = name.trim().to_ascii_lowercase().replace(['-', '_'], "");
+    let markers = [
+        "authorization",
+        "cookie",
+        "setcookie",
+        "password",
+        "secret",
+        "token",
+        "apikey",
+        "apitoken",
+        "accesstoken",
+        "refreshtoken",
+        "credential",
+        "clientsecret",
+        "bearertoken",
+    ];
+    if markers.iter().any(|m| normalized == *m) {
+        return true;
+    }
+    // 精确子串：避免把 monkey / keyboard 等普通词误判为敏感。
+    [
+        "accesstoken",
+        "refreshtoken",
+        "apitoken",
+        "apikey",
+        "clientsecret",
+        "password",
+        "setcookie",
+        "authorization",
+    ]
+    .iter()
+    .any(|m| normalized.contains(m))
+}
+
+/// 判断主机是否为回环地址（用于测试连接时放行本机 HTTP）。
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+}
+
+/// 测试连接专用 HTTP 客户端（生产可用）：
+/// - HTTPS 走安全客户端（TLS 校验、无代理、无重定向）。
+/// - HTTP 仅允许本机回环地址（`localhost` / `127.0.0.1` / `::1`），供本地 Mock 测试；
+///   其他 HTTP 目标一律拒绝，避免向明文网络泄露凭据。
+pub fn custom_test_http_client(url: &str, timeout_secs: u64) -> Result<reqwest::Client, String> {
+    let parsed = url::Url::parse(url).map_err(|_| "请求 URL 无效".to_string())?;
+    match parsed.scheme() {
+        "https" => reqwest::Client::builder()
+            .timeout(Duration::from_secs(timeout_secs))
+            .https_only(true)
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .build()
+            .map_err(|_| "无法创建安全网络客户端".into()),
+        "http" => {
+            let host = parsed.host_str().unwrap_or("");
+            if !is_loopback_host(host) {
+                return Err("HTTP 仅允许本机回环地址（localhost/127.0.0.1/::1）用于测试".into());
+            }
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(timeout_secs))
+                .redirect(reqwest::redirect::Policy::none())
+                .no_proxy()
+                .build()
+                .map_err(|_| "无法创建测试网络客户端".into())
+        }
+        _ => Err("请求 URL 仅支持 http/https".into()),
+    }
+}
+
 pub fn safe_log(scope: &str, message: impl AsRef<str>) {
     let line = format!(
         "[{scope}] {}",
@@ -357,5 +455,29 @@ mod tests {
         }
         assert!(is_public_ip("8.8.8.8".parse().unwrap()));
         assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
+    }
+
+    #[test]
+    fn redact_json_hides_sensitive_fields_case_insensitive() {
+        let value: serde_json::Value = serde_json::from_str(
+            r#"{"Authorization":"Bearer abc.def","api_key":"sk-1234","data":{"balance":10},"items":[{"token":"secret-token"}]}"#,
+        )
+        .unwrap();
+        let redacted = redact_json(&value);
+        let text = redacted.to_string();
+        for secret in ["abc.def", "sk-1234", "secret-token"] {
+            assert!(!text.contains(secret), "泄露: {text}");
+        }
+        assert!(text.contains("******"));
+        assert!(text.contains("balance"));
+    }
+
+    #[test]
+    fn custom_test_http_client_allows_loopback_http_only() {
+        assert!(custom_test_http_client("https://example.com/v1", 5).is_ok());
+        assert!(custom_test_http_client("http://127.0.0.1:8080", 5).is_ok());
+        assert!(custom_test_http_client("http://localhost:8080", 5).is_ok());
+        assert!(custom_test_http_client("http://192.168.1.1", 5).is_err());
+        assert!(custom_test_http_client("ftp://example.com", 5).is_err());
     }
 }

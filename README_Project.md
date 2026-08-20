@@ -4,7 +4,7 @@
 
 AI API Monitor 是一个 Tauri 2 桌面应用，用统一 Dashboard 展示多个 AI 平台的余额、Token、费用、历史趋势和预计耗尽时间。当前版本为 `0.1.0`，功能阶段标识为 `V0.5-alpha`。
 
-当前已注册平台：Claude、Codex、DeepSeek、OpenAI、OpenRouter、SiliconFlow。Gemini 代码仅保留说明，未对用户开放。
+当前已注册平台：Claude、Codex、DeepSeek、OpenAI、OpenRouter、SiliconFlow，以及通用自定义 API（`custom`）。Gemini 代码仅保留说明，未对用户开放。
 
 ## 环境配置
 
@@ -126,6 +126,18 @@ cargo test
 4. 在 `Settings.tsx` 增加默认 Base URL、无 Key 规则或权限提示（如需要）。
 5. 更新 `README.md`、`Markdown/Development/TEST_CASES.md` 和项目索引。
 6. 使用 HTTP mock 验证成功、401/403、429、超时、非 JSON 与字段缺失。
+
+## 通用自定义 API（custom）
+
+`custom` 类型是通用自定义 API 适配器，用于接入任意返回余额/额度/用量/重置时间的 HTTPS 接口：
+
+- 请求：方法（GET/POST）、URL、Query（结构化编码）、Headers、JSON Body（仅 POST）。
+- 认证：Bearer Token、API Key Header、Basic Auth、无认证、自定义 Header。
+- 响应：JSON 点路径映射 `remainingPath`/`totalPath`/`usedPath`/`resetTimePath`，支持嵌套对象与数组索引。
+- 单位：Token、次数、金额、自定义。
+- 余额：`remaining` 优先；否则 `total - used`；缺失字段保留未知，不用 0 伪装。
+
+安全：Token/Key/密码/自定义 Header 值只经系统 keyring 存储，SQLite 仅存非敏感配置（`providers.custom_config`，schema V7）与不可逆的 `key_ref`；测试连接返回脱敏后的解析结果与响应结构预览。远程默认仅 HTTPS，本机回环 HTTP 仅用于测试连接。
 
 ## 后续计划
 

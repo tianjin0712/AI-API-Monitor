@@ -25,6 +25,11 @@ import {
   saveCustomBackgroundPalette,
 } from "../utils/customBackground";
 import type {
+  CustomApiConfig,
+  CustomAuthType,
+  CustomKeyValue,
+  CustomTestResult,
+  CustomUnit,
   DeleteResult,
   Layout,
   ProviderConfig,
@@ -38,6 +43,22 @@ type FormState = {
   providerType: string;
   apiUrl: string;
   apiKey: string;
+  custom: CustomFormState;
+};
+
+type CustomFormState = {
+  method: "GET" | "POST";
+  query: string;
+  headers: string;
+  authType: CustomAuthType;
+  authHeaderName: string;
+  authUsername: string;
+  body: string;
+  remainingPath: string;
+  totalPath: string;
+  usedPath: string;
+  resetTimePath: string;
+  unit: CustomUnit;
 };
 
 const TYPE_PRESETS: Record<string, string> = {
@@ -52,6 +73,21 @@ const TYPE_PRESETS: Record<string, string> = {
 
 const DEFAULT_PROVIDER_TYPE = "deepseek";
 
+const createEmptyCustom = (): CustomFormState => ({
+  method: "GET",
+  query: "",
+  headers: "",
+  authType: "bearer",
+  authHeaderName: "",
+  authUsername: "",
+  body: "",
+  remainingPath: "",
+  totalPath: "",
+  usedPath: "",
+  resetTimePath: "",
+  unit: "custom",
+});
+
 const createEmptyForm = (): FormState => ({
   id: null,
   name: "",
@@ -59,7 +95,70 @@ const createEmptyForm = (): FormState => ({
   // 必须是实际值而非 placeholder，否则首次直接添加会被判定为 URL 为空。
   apiUrl: TYPE_PRESETS[DEFAULT_PROVIDER_TYPE],
   apiKey: "",
+  custom: createEmptyCustom(),
 });
+
+/** 解析 key=value 逐行文本为结构化键值对。 */
+function parseKeyValues(text: string): CustomKeyValue[] {
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const index = line.indexOf("=");
+      if (index <= 0) return { key: line, value: "" };
+      return { key: line.slice(0, index).trim(), value: line.slice(index + 1).trim() };
+    });
+}
+
+/** 由表单构造非敏感 Custom API 配置（敏感值走 apiKey 字段）。 */
+function buildCustomConfig(form: FormState): CustomApiConfig {
+  const custom = form.custom;
+  return {
+    url: form.apiUrl,
+    method: custom.method,
+    query: parseKeyValues(custom.query),
+    headers: parseKeyValues(custom.headers),
+    body: custom.body.trim() || null,
+    auth: {
+      type: custom.authType,
+      headerName: custom.authHeaderName.trim() || null,
+      username: custom.authUsername.trim() || null,
+    },
+    responseMapping: {
+      remainingPath: custom.remainingPath.trim() || null,
+      totalPath: custom.totalPath.trim() || null,
+      usedPath: custom.usedPath.trim() || null,
+      resetTimePath: custom.resetTimePath.trim() || null,
+    },
+    unit: custom.unit,
+  };
+}
+
+/** 编辑时把已保存的 custom_config JSON 回填为表单状态。 */
+function parseCustomConfig(json: string | null | undefined): CustomFormState {
+  const empty = createEmptyCustom();
+  if (!json) return empty;
+  try {
+    const cfg = JSON.parse(json) as CustomApiConfig;
+    return {
+      method: cfg.method === "POST" ? "POST" : "GET",
+      query: (cfg.query ?? []).map((kv) => `${kv.key}=${kv.value}`).join("\n"),
+      headers: (cfg.headers ?? []).map((kv) => `${kv.key}=${kv.value}`).join("\n"),
+      authType: cfg.auth?.type ?? "bearer",
+      authHeaderName: cfg.auth?.headerName ?? "",
+      authUsername: cfg.auth?.username ?? "",
+      body: cfg.body ?? "",
+      remainingPath: cfg.responseMapping?.remainingPath ?? "",
+      totalPath: cfg.responseMapping?.totalPath ?? "",
+      usedPath: cfg.responseMapping?.usedPath ?? "",
+      resetTimePath: cfg.responseMapping?.resetTimePath ?? "",
+      unit: cfg.unit ?? "custom",
+    };
+  } catch {
+    return empty;
+  }
+}
 
 /** 使用 CLI 本地凭证的类型（无需输入 API Key） */
 const NO_API_KEY_TYPES = new Set(["codex"]);
@@ -68,7 +167,7 @@ const NO_API_KEY_TYPES = new Set(["codex"]);
 const TYPE_HINTS: Record<string, string> = {
   codex: "无需 API Key：仅通过 `codex login status` 检测公开登录状态，不读取或保存任何 Token、Cookie 或认证文件。",
   claude: "需要组织（Organization）管理员 API Key（sk-ant-admin01-...）；个人账户不可用。Anthropic 为后付费账单，无余额查询，仅显示用量与费用。",
-  custom: "自定义 OpenAI Admin API：仅适用于同时实现 /organization/usage/completions 与 /organization/costs 的服务，不等同于普通 Chat Completions 兼容接口。",
+  custom: "通用自定义 API：可配置请求方法、URL、认证方式与 JSON 响应字段映射，接入任意返回余额/额度/用量/重置时间的接口。敏感值经系统凭据库加密保存。",
 };
 
 function NumberStepper({
@@ -135,6 +234,8 @@ export default function Settings({
   const [types, setTypes] = useState<string[]>([]);
   const [form, setForm] = useState<FormState>(createEmptyForm);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<CustomTestResult | null>(null);
   const [codexRuntimeStatus, setCodexRuntimeStatus] = useState<{ installed: boolean; loggedIn: boolean; runtimeSource: string | null } | null>(null);
   const [codexLoginPending, setCodexLoginPending] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<ProviderConfig | null>(null);
@@ -255,10 +356,47 @@ export default function Settings({
       providerType: p.providerType,
       apiUrl: p.apiUrl,
       apiKey: "",
+      custom: parseCustomConfig(p.customConfig),
     });
+    setTestResult(null);
   };
 
-  const cancelEdit = () => setForm(createEmptyForm());
+  const cancelEdit = () => {
+    setForm(createEmptyForm());
+    setTestResult(null);
+  };
+
+  const testCustom = async () => {
+    setError(null);
+    if (!form.apiUrl.trim()) {
+      setError("请先填写 API 地址");
+      return;
+    }
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const cfg = buildCustomConfig(form);
+      const result = await api.testCustomProvider(
+        JSON.stringify(cfg),
+        form.apiKey.trim() || null,
+      );
+      setTestResult(result);
+    } catch (e) {
+      setTestResult({
+        success: false,
+        status: null,
+        remaining: null,
+        total: null,
+        used: null,
+        unit: form.custom.unit,
+        resetTime: null,
+        responsePreview: null,
+        error: String(e),
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const submit = async () => {
     setError(null);
@@ -266,22 +404,29 @@ export default function Settings({
       setError("请填写名称与 API URL");
       return;
     }
+    const customRequiresSecret =
+      form.providerType === "custom" && form.custom.authType !== "none";
     if (
       form.id === null &&
       !NO_API_KEY_TYPES.has(form.providerType) &&
+      customRequiresSecret &&
       !form.apiKey.trim()
     ) {
-      setError("新增账户必须填写 API Key");
+      setError("新增账户必须填写认证凭据");
       return;
     }
     setSaving(true);
     try {
+      const customConfig =
+        form.providerType === "custom"
+          ? JSON.stringify(buildCustomConfig(form))
+          : null;
       if (form.providerType === "custom") {
         const approved = await api.isCustomEndpointApproved(form.apiUrl);
         if (!approved) {
           const origin = new URL(form.apiUrl).origin;
           const confirmed = window.confirm(
-            `自定义网关将接收你的 API Key。\n\n目标：${origin}\n\n仅在你信任该服务运营方时批准。是否继续？`,
+            `自定义网关将接收你的认证凭据。\n\n目标：${origin}\n\n仅在你信任该服务运营方时批准。是否继续？`,
           );
           if (!confirmed) return;
           await api.approveCustomEndpoint(form.apiUrl);
@@ -293,6 +438,7 @@ export default function Settings({
           providerType: form.providerType,
           apiUrl: form.apiUrl,
           apiKey: form.apiKey,
+          customConfig,
         });
       } else {
         await api.updateProvider({
@@ -300,6 +446,7 @@ export default function Settings({
           name: form.name,
           apiUrl: form.apiUrl,
           apiKey: form.apiKey.trim() ? form.apiKey : null,
+          customConfig,
         });
       }
       setForm(createEmptyForm());
@@ -583,7 +730,9 @@ export default function Settings({
               </div>
             ) : (
               <>
-                API Key
+                {form.providerType === "custom"
+                  ? "认证凭据（Token / Key / 密码 / Header 值）"
+                  : "API Key"}
                 <span className="ml-2 text-[10px] text-text-muted">
                   {form.id === null
                     ? "加密保存至系统凭据库，绝不落库"
@@ -607,6 +756,152 @@ export default function Settings({
               提示：OpenAI 用量/费用接口需要组织（Organization）管理员权限的
               API Key，普通项目 Key 会返回 403。
             </p>
+          )}
+          {form.providerType === "custom" && (
+            <>
+              <label className="col-span-2 text-[12px] text-text-secondary">
+                请求方式
+                <AppSelect
+                  className="mt-1"
+                  value={form.custom.method}
+                  options={[{ value: "GET", label: "GET" }, { value: "POST", label: "POST" }]}
+                  onChange={(value) =>
+                    setForm({ ...form, custom: { ...form.custom, method: value as "GET" | "POST" } })
+                  }
+                  aria-label="请求方式"
+                />
+              </label>
+              <label className="col-span-2 text-[12px] text-text-secondary">
+                Query 参数（每行 key=value）
+                <textarea
+                  className="mt-1 w-full rounded-lg border border-border bg-control px-2.5 py-1.5 text-[12px] text-text-primary"
+                  rows={2}
+                  value={form.custom.query}
+                  placeholder={"key1=value1\nkey2=value2"}
+                  onChange={(e) => setForm({ ...form, custom: { ...form.custom, query: e.target.value } })}
+                />
+              </label>
+              <label className="col-span-2 text-[12px] text-text-secondary">
+                Headers（每行 key=value；认证头请在下方认证方式配置）
+                <textarea
+                  className="mt-1 w-full rounded-lg border border-border bg-control px-2.5 py-1.5 text-[12px] text-text-primary"
+                  rows={2}
+                  value={form.custom.headers}
+                  placeholder={"X-Custom=abc"}
+                  onChange={(e) => setForm({ ...form, custom: { ...form.custom, headers: e.target.value } })}
+                />
+              </label>
+              <label className="text-[12px] text-text-secondary">
+                认证方式
+                <AppSelect
+                  className="mt-1"
+                  value={form.custom.authType}
+                  options={[
+                    { value: "bearer", label: "Bearer Token" },
+                    { value: "apiKey", label: "API Key Header" },
+                    { value: "basic", label: "Basic Auth" },
+                    { value: "none", label: "无认证" },
+                    { value: "customHeader", label: "自定义 Header" },
+                  ]}
+                  onChange={(value) =>
+                    setForm({ ...form, custom: { ...form.custom, authType: value as CustomAuthType } })
+                  }
+                  aria-label="认证方式"
+                />
+              </label>
+              {(form.custom.authType === "apiKey" || form.custom.authType === "customHeader") && (
+                <label className="text-[12px] text-text-secondary">
+                  Header 名称
+                  <TextField
+                    className="mt-1"
+                    value={form.custom.authHeaderName}
+                    placeholder="X-API-Key"
+                    onChange={(e) =>
+                      setForm({ ...form, custom: { ...form.custom, authHeaderName: e.target.value } })
+                    }
+                  />
+                </label>
+              )}
+              {form.custom.authType === "basic" && (
+                <label className="text-[12px] text-text-secondary">
+                  用户名
+                  <TextField
+                    className="mt-1"
+                    value={form.custom.authUsername}
+                    placeholder="username"
+                    onChange={(e) =>
+                      setForm({ ...form, custom: { ...form.custom, authUsername: e.target.value } })
+                    }
+                  />
+                </label>
+              )}
+              {form.custom.method === "POST" && (
+                <label className="col-span-2 text-[12px] text-text-secondary">
+                  Request Body（JSON）
+                  <textarea
+                    className="mt-1 w-full rounded-lg border border-border bg-control px-2.5 py-1.5 text-[12px] text-text-primary"
+                    rows={3}
+                    value={form.custom.body}
+                    placeholder={'{"key":"value"}'}
+                    onChange={(e) => setForm({ ...form, custom: { ...form.custom, body: e.target.value } })}
+                  />
+                </label>
+              )}
+              <label className="text-[12px] text-text-secondary">
+                剩余额度字段（点路径）
+                <TextField className="mt-1" value={form.custom.remainingPath} placeholder="data.remaining" onChange={(e) => setForm({ ...form, custom: { ...form.custom, remainingPath: e.target.value } })} />
+              </label>
+              <label className="text-[12px] text-text-secondary">
+                总额度字段
+                <TextField className="mt-1" value={form.custom.totalPath} placeholder="data.total" onChange={(e) => setForm({ ...form, custom: { ...form.custom, totalPath: e.target.value } })} />
+              </label>
+              <label className="text-[12px] text-text-secondary">
+                已使用字段
+                <TextField className="mt-1" value={form.custom.usedPath} placeholder="data.used" onChange={(e) => setForm({ ...form, custom: { ...form.custom, usedPath: e.target.value } })} />
+              </label>
+              <label className="text-[12px] text-text-secondary">
+                重置时间字段
+                <TextField className="mt-1" value={form.custom.resetTimePath} placeholder="data.resetTime" onChange={(e) => setForm({ ...form, custom: { ...form.custom, resetTimePath: e.target.value } })} />
+              </label>
+              <label className="text-[12px] text-text-secondary">
+                单位
+                <AppSelect
+                  className="mt-1"
+                  value={form.custom.unit}
+                  options={[
+                    { value: "token", label: "Token" },
+                    { value: "count", label: "次数" },
+                    { value: "currency", label: "金额" },
+                    { value: "custom", label: "自定义" },
+                  ]}
+                  onChange={(value) =>
+                    setForm({ ...form, custom: { ...form.custom, unit: value as CustomUnit } })
+                  }
+                  aria-label="单位"
+                />
+              </label>
+              <div className="col-span-2 flex items-center gap-2">
+                <Button onClick={() => void testCustom()} disabled={testing}>
+                  {testing ? "测试中…" : "测试连接"}
+                </Button>
+              </div>
+              {testResult && (
+                <div className="col-span-2 rounded-lg border border-border bg-control/50 px-2.5 py-2 text-[11px] text-text-secondary">
+                  {testResult.success ? (
+                    <>
+                      <div className="text-success">连接成功（HTTP {testResult.status}）</div>
+                      <div className="mt-1">剩余：{testResult.remaining ?? "—"} · 总额：{testResult.total ?? "—"} · 已用：{testResult.used ?? "—"} · 单位：{testResult.unit}</div>
+                      {testResult.resetTime && <div>重置时间：{testResult.resetTime}</div>}
+                      {testResult.responsePreview && (
+                        <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-black/20 p-2 text-[10px]">{testResult.responsePreview}</pre>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-danger">测试失败：{testResult.error ?? "未知错误"}</div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
         <div className="mt-3 flex gap-2">

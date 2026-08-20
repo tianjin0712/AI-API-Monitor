@@ -20,6 +20,8 @@ export interface ProviderConfig {
   apiUrl: string;
   keyHint: string;
   enabled: boolean;
+  /** 通用自定义 API 的非敏感配置（JSON 字符串，仅 custom 类型）。 */
+  customConfig?: string | null;
   createdTime: string;
   updatedTime: string;
 }
@@ -41,6 +43,8 @@ export interface ProviderUsage {
   resetTime: string | null;
   /** Codex Desktop/App Server 返回的动态额度详情；其他 Provider 不提供。 */
   codex?: CodexUsageDetails | null;
+  /** 自定义 API 的原始额度结果；其他 Provider 不提供。 */
+  custom?: CustomUsageDetails | null;
   updatedAt: string;
 }
 
@@ -171,4 +175,57 @@ export interface UpdateInfo {
 export interface ImportedAsset {
   assetId: string;
   url: string;
+}
+
+// ---- 通用自定义 API ----
+
+export type CustomAuthType = "bearer" | "apiKey" | "basic" | "none" | "customHeader";
+export type CustomUnit = "token" | "count" | "currency" | "custom";
+
+export interface CustomKeyValue {
+  key: string;
+  value: string;
+}
+
+export interface CustomAuth {
+  type: CustomAuthType;
+  headerName?: string | null;
+  username?: string | null;
+}
+
+export interface CustomResponseMapping {
+  remainingPath?: string | null;
+  totalPath?: string | null;
+  usedPath?: string | null;
+  resetTimePath?: string | null;
+}
+
+export interface CustomApiConfig {
+  url: string;
+  method: string;
+  query: CustomKeyValue[];
+  headers: CustomKeyValue[];
+  body?: string | null;
+  auth: CustomAuth;
+  responseMapping: CustomResponseMapping;
+  unit?: CustomUnit | null;
+}
+
+export interface CustomUsageDetails {
+  remaining: number | null;
+  total: number | null;
+  used: number | null;
+  unit: string;
+}
+
+export interface CustomTestResult {
+  success: boolean;
+  status: number | null;
+  remaining: number | null;
+  total: number | null;
+  used: number | null;
+  unit: string;
+  resetTime: string | null;
+  responsePreview: string | null;
+  error: string | null;
 }

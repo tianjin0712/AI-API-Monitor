@@ -125,6 +125,7 @@ pub fn run() {
             commands::refresh_all,
             commands::get_codex_runtime_status,
             commands::start_codex_login,
+            commands::test_custom_provider,
             commands::get_refresh_settings,
             commands::set_refresh_settings,
             commands::get_app_behavior_settings,

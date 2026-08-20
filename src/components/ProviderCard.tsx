@@ -19,6 +19,8 @@ export default function ProviderCard({ provider, usage, error, refreshing, onRef
   const todayCost = usage?.todayCost ?? null;
   const currency = usage?.currency || "¥";
   const isCodex = provider.providerType === "codex";
+  const custom = usage?.custom ?? null;
+  const isCustom = custom !== null;
   const percent = remaining !== null && Number.isFinite(remaining)
     ? Math.max(0, Math.min(100, remaining))
     : balance !== null ? 100 : 0;
@@ -51,11 +53,11 @@ export default function ProviderCard({ provider, usage, error, refreshing, onRef
               {balance !== null ? formatMoney(balance) : usage ? "—" : "未刷新"}
             </span>
             {balance !== null && <span className="text-[13px] text-text-secondary">{currency}</span>}
-            {remaining !== null && <span className="ml-auto text-[12px] text-text-secondary">剩余 {formatMoney(remaining)}%</span>}
+            {remaining !== null && <span className="ml-auto text-[12px] text-text-secondary">剩余 {formatMoney(remaining)}{isCustom ? ` ${customUnitLabel(custom!.unit)}` : "%"}</span>}
           </div>
           <div className="provider-progress mt-2"><span data-tone={barTone} style={{ width: `${percent}%` }} /></div>
           <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <Stat label="Token" value={formatCount(usage?.totalTokens ?? 0)} />
+            <Stat label={isCustom ? "已用" : "Token"} value={isCustom ? (custom!.used != null ? formatCount(custom!.used) : "—") : formatCount(usage?.totalTokens ?? 0)} />
             <Stat label="今日消费" value={todayCost != null ? formatMoney(todayCost) : "—"} suffix={todayCost != null ? currency : ""} />
             <Stat label="更新时间" value={formatRelativeTime(usage?.updatedAt)} />
           </div>
@@ -165,6 +167,15 @@ function codexErrorLabel(error: string) {
   if (/未登录|login|unauthorized|authentication/.test(normalized)) return { title: "ChatGPT 尚未登录", detail: "请先在官方 Desktop 客户端完成登录。" };
   if (/网络|network|连接|timeout|timed out/.test(normalized)) return { title: "网络连接失败", detail: "额度读取暂时不可用，可稍后手动刷新。" };
   return { title: "额度读取失败", detail: error };
+}
+
+function customUnitLabel(unit: string): string {
+  switch (unit) {
+    case "token": return "Token";
+    case "count": return "次";
+    case "currency": return "";
+    default: return "";
+  }
 }
 
 function Stat({ label, value, suffix }: { label: string; value: string; suffix?: string }) {
