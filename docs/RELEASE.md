@@ -32,10 +32,22 @@ Windows 安装版已完成实际安装测试。安装后，应用启动、Dashbo
 
 ```powershell
 pnpm install --frozen-lockfile
-.\scripts\Build-Release.ps1
+pnpm version:sync X.Y.Z
+pnpm version:check X.Y.Z
+pnpm check
+pnpm build
+git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+git commit -m "chore: release vX.Y.Z"
+pnpm release:verify vX.Y.Z
+git tag -a vX.Y.Z -m "vX.Y.Z"
+pnpm release:verify vX.Y.Z --require-tag
+git push origin HEAD
+git push origin vX.Y.Z
 ```
 
-脚本先运行检查，再生成免管理员 NSIS 安装包和 ZIP 便携版到 `release/`。仅在已完成独立质量检查时才可使用 `-SkipChecks`。
+版本号必须在 release commit 前同步。`pnpm tauri build` 只校验 manifest 一致性并构建，绝不会根据 Tag 回写版本。Tag 推送后 GitHub Actions 会在该 Tag 指向的提交上再次验证 `Tag == manifest`，再构建 Windows bundle；工作流不修改任何版本文件。
+
+不要在旧 manifest 上打 Tag，也不要在打 Tag 后补改版本。若 `pnpm release:verify` 失败，应修复或重新提交 release commit；不要移动或重写已发布 Tag。
 
 发布目录：
 

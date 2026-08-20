@@ -1,0 +1,58 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout tagged release commit
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: clippy,rustfmt
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify immutable release metadata
+        run: pnpm release:verify "${{ github.ref_name }}" --require-tag
+
+      - name: Run quality gate
+        run: pnpm check
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build Tauri bundle without mutating versions
+        run: pnpm tauri build
+
+      - name: Upload unsigned bundle for release review
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-api-monitor-${{ github.ref_name }}-windows
+          path: src-tauri/target/release/bundle/**
+          if-no-files-found: error
