@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { assertManifestVersions, normalizeVersion } from "./version-manifests.mjs";
+import { assertManifestVersions, normalizeVersion, root } from "./version-manifests.mjs";
 
 const args = process.argv.slice(2);
 const requireTag = args.includes("--require-tag");
 const values = args.filter((arg) => arg !== "--require-tag");
 
 function git(args) {
-  return execFileSync("git", args, { encoding: "utf8" }).trim();
+  return execFileSync("git", args, { encoding: "utf8", cwd: root }).trim();
 }
 
 function fail(message) {
