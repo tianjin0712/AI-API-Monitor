@@ -1,0 +1,2313 @@
+{
+  "market": {
+    "latest": {
+      "latest": "1.16.0",
+      "dev": "1.16.0-dev.202608191514-19afba9",
+      "beta": "1.16.0-beta.3"
+    },
+    "versions": [
+      "1.15.0-dev.202608190348-f4a993f",
+      "1.15.0-dev.202608190507-ae1c41c",
+      "1.15.0-dev.202608190526-6bd77fe",
+      "1.15.0-dev.202608190759-656900b",
+      "1.15.0-dev.202608190840-e9c36be",
+      "1.15.0-dev.202608190915-7ee451a",
+      "1.15.0-beta.1",
+      "1.15.0-beta.2",
+      "1.15.0",
+      "1.16.0-dev.202608191435-2f52e6f",
+      "1.16.0-dev.202608191514-19afba9",
+      "1.16.0-beta.1",
+      "1.16.0-beta.2",
+      "1.16.0-beta.3",
+      "1.16.0"
+    ],
+    "latestManifest": {
+      "name": "dshmarket",
+      "description": "Visual plugin market inside DeepSeek Harness — browse, search, and one-click install community plugins. · DSH 可视化插件市场：逛一逛，点一下，装好。",
+      "version": "1.16.0",
+      "type": "module",
+      "main": "lib/index.js",
+      "types": "lib/types/index.d.ts",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/dsh-market/dsh-market.git"
+      },
+      "homepage": "https://dshmarket.com",
+      "keywords": [
+        "deepseek",
+        "harness",
+        "dsh",
+        "dsh-plugin",
+        "marketplace",
+        "market",
+        "plugin-manager"
+      ],
+      "scripts": {
+        "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
+        "build": "tsc -p tsconfig.json && npm run build:client",
+        "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
+        "check": "npm run typecheck && npm run build && node scripts/restart-smoke.mjs",
+        "test": "vitest run",
+        "test:compat": "vitest run --config vitest.compat.config.ts",
+        "prepack": "npm run build && node scripts/preflight.mjs",
+        "prepare": "npm run build",
+        "validate:registry": "node scripts/validate-registry.mjs",
+        "snapshot": "curl -sf https://awesome-dsh-plugin.com/plugins.json -o data/registry-snapshot.json && curl -sf https://awesome-dsh-plugin.com/readmes.json -o data/readmes-snapshot.json",
+        "test:web": "vitest run --config vitest.web.config.ts",
+        "build:site": "node scripts/build-site.mjs"
+      },
+      "dependencies": {
+        "js-yaml": "^4.1.0",
+        "undici": "^7.29.0"
+      },
+      "peerDependencies": {
+        "@deepseek-ai/cordis": "^4.0.1",
+        "@deepseek-ai/dsh-settings": "^0.1.0-rc.7"
+      },
+      "dsh": {
+        "bundle": {
+          "patch": "./cordis.patch.yml"
+        },
+        "client": {
+          "inject": [
+            "@deepseek-ai/dsh-client-connection",
+            "@deepseek-ai/dsh-client-runtime",
+            "@deepseek-ai/dsh-client-locale",
+            "@deepseek-ai/dsh-client-ui-settings",
+            "@deepseek-ai/dsh-client-ui-theme"
+          ],
+          "platform": "web"
+        }
+      },
+      "exports": {
+        ".": {
+          "types": "./lib/types/index.d.ts",
+          "default": "./lib/index.js"
+        },
+        "./client": "./client/client.js",
+        "./cordis.patch.yml": "./cordis.patch.yml",
+        "./package.json": "./package.json"
+      },
+      "devDependencies": {
+        "@deepseek-ai/cordis": "^4.0.1",
+        "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.7",
+        "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
+        "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.7",
+        "@deepseek-ai/dsh-invariants": "^0.1.0-rc.6",
+        "@deepseek-ai/dsh-settings": "^0.1.0-rc.7",
+        "@testing-library/react": "^16.3.2",
+        "@types/js-yaml": "^4.0.9",
+        "@types/node": "^26.2.0",
+        "@types/react": "~18.3.1",
+        "@types/react-dom": "~18.3.1",
+        "jsdom": "^29.1.1",
+        "lightningcss": "^1.33.0",
+        "marked": "^18.0.10",
+        "playwright": "^1.62.1",
+        "react": "^18.3.1",
+        "react-dom": "~18.3.1",
+        "tsdown": "^0.22.14",
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.10"
+      },
+      "publishConfig": {
+        "registry": "https://registry.npmjs.org/"
+      },
+      "peerDependenciesMeta": {
+        "@deepseek-ai/dsh-settings": {
+          "optional": true
+        }
+      },
+      "gitHead": "fa5200829cbcc2a0cb4b5e0d2199f74a26f928fc",
+      "_id": "dshmarket@1.16.0",
+      "bugs": {
+        "url": "https://github.com/dsh-market/dsh-market/issues"
+      },
+      "_nodeVersion": "24.19.0",
+      "_npmVersion": "12.0.2",
+      "dist": {
+        "integrity": "sha512-WuHVUQzzECcK0gWdf0Q84KVvKNYNLTbF/GEh2TpBZEeekEI9hbZlqRu3kDwfVDciRgb49GtD0ost1sn45BbfMQ==",
+        "shasum": "73e3b18582fe79e1c675db808554f12b88efb512",
+        "tarball": "https://registry.npmjs.org/dshmarket/-/dshmarket-1.16.0.tgz",
+        "fileCount": 109,
+        "unpackedSize": 2184016,
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/dshmarket@1.16.0",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "signatures": [
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEQCIEmSGjpHTseHxepHPRkJhwqLppJtpnSStTKW3L7LjTUYAiBKZMOKPlnWy44zpEOc7hT5HdPcygHti4T3mXtExYGDTA=="
+          }
+        ]
+      },
+      "_npmUser": {
+        "name": "GitHub Actions",
+        "email": "npm-oidc-no-reply@github.com",
+        "trustedPublisher": {
+          "id": "github",
+          "oidcConfigId": "oidc:649e69c5-6d1d-42f8-82cf-7ca61682d5fa"
+        }
+      },
+      "directories": {},
+      "maintainers": [
+        {
+          "name": "fkysly",
+          "email": "fkysly@gmail.com"
+        }
+      ],
+      "_npmOperationalInternal": {
+        "host": "s3://npm-registry-packages-npm-production",
+        "tmp": "tmp/dshmarket_1.16.0_1787222400943_0.4444343677646878"
+      },
+      "_hasShrinkwrap": false
+    },
+    "repo": {
+      "type": "git",
+      "url": "git+https://github.com/dsh-market/dsh-market.git"
+    },
+    "description": "Visual plugin market inside DeepSeek Harness — browse, search, and one-click install community plugins. · DSH 可视化插件市场：逛一逛，点一下，装好。",
+    "time": {
+      "created": "2026-08-13T15:33:59.185Z",
+      "modified": "2026-08-20T10:40:01.446Z",
+      "0.0.1": "2026-08-13T15:33:59.441Z",
+      "1.0.0": "2026-08-14T10:12:42.084Z",
+      "1.0.1": "2026-08-14T10:24:18.253Z",
+      "1.0.2": "2026-08-14T10:34:41.145Z",
+      "1.0.3": "2026-08-14T13:17:13.440Z",
+      "1.1.0": "2026-08-14T15:53:43.245Z",
+      "1.2.0": "2026-08-14T17:43:11.575Z",
+      "1.2.1": "2026-08-14T18:00:31.237Z",
+      "1.2.2": "2026-08-14T18:10:15.937Z",
+      "1.2.3": "2026-08-15T02:58:21.556Z",
+      "1.2.4": "2026-08-15T04:44:47.538Z",
+      "1.3.0": "2026-08-15T06:22:20.655Z",
+      "1.3.1": "2026-08-15T09:05:43.284Z",
+      "1.4.0": "2026-08-15T09:39:13.994Z",
+      "1.4.1": "2026-08-15T10:16:25.562Z",
+      "1.5.0": "2026-08-15T15:22:18.484Z",
+      "1.5.1": "2026-08-16T01:24:04.960Z",
+      "1.6.0": "2026-08-16T02:35:00.006Z",
+      "1.7.0": "2026-08-16T03:31:26.378Z",
+      "1.8.0": "2026-08-16T04:36:24.592Z",
+      "1.9.0": "2026-08-16T07:23:17.632Z",
+      "1.10.0": "2026-08-16T14:29:22.749Z",
+      "1.10.1": "2026-08-16T15:12:37.692Z",
+      "1.11.0": "2026-08-17T03:53:36.876Z",
+      "1.11.1": "2026-08-17T08:25:52.838Z",
+      "1.11.2": "2026-08-17T12:43:55.963Z",
+      "1.11.3": "2026-08-17T16:41:55.264Z",
+      "1.12.0": "2026-08-18T03:10:13.189Z",
+      "1.12.1": "2026-08-18T03:54:17.449Z",
+      "1.12.2": "2026-08-18T07:10:47.336Z",
+      "1.13.0": "2026-08-18T09:24:14.948Z",
+      "1.13.1": "2026-08-18T09:46:49.886Z",
+      "1.14.0-beta.1": "2026-08-18T11:40:06.838Z",
+      "1.14.0-beta.2": "2026-08-18T13:06:00.950Z",
+      "1.15.0-dev.202608181407-2fad14a": "2026-08-18T14:07:19.478Z",
+      "1.15.0-dev.202608181550-5dab1d8": "2026-08-18T15:50:39.500Z",
+      "1.15.0-dev.202608181604-adf97aa": "2026-08-18T16:04:35.449Z",
+      "1.14.0": "2026-08-18T17:42:41.607Z",
+      "1.14.1": "2026-08-19T01:16:46.446Z",
+      "1.15.0-dev.202608190348-f4a993f": "2026-08-19T03:49:13.267Z",
+      "1.15.0-dev.202608190507-ae1c41c": "2026-08-19T05:07:07.672Z",
+      "1.15.0-dev.202608190526-6bd77fe": "2026-08-19T05:26:39.135Z",
+      "1.15.0-dev.202608190759-656900b": "2026-08-19T07:59:56.882Z",
+      "1.15.0-dev.202608190840-e9c36be": "2026-08-19T08:40:32.883Z",
+      "1.15.0-dev.202608190915-7ee451a": "2026-08-19T09:15:59.441Z",
+      "1.15.0-beta.1": "2026-08-19T09:50:53.064Z",
+      "1.15.0-beta.2": "2026-08-19T10:07:42.958Z",
+      "1.15.0": "2026-08-19T10:15:10.300Z",
+      "1.16.0-dev.202608191435-2f52e6f": "2026-08-19T14:35:36.386Z",
+      "1.16.0-dev.202608191514-19afba9": "2026-08-19T15:14:36.783Z",
+      "1.16.0-beta.1": "2026-08-20T09:52:43.151Z",
+      "1.16.0-beta.2": "2026-08-20T10:04:28.916Z",
+      "1.16.0-beta.3": "2026-08-20T10:18:25.257Z",
+      "1.16.0": "2026-08-20T10:40:01.115Z"
+    }
+  },
+  "find": {
+    "latest": {
+      "latest": "0.3.7"
+    },
+    "latestManifest": {
+      "name": "dsh-find-plugin",
+      "description": "Find DeepSeek Harness plugins inside the agent — live GitHub dsh-plugin topic search, ranked by stars.",
+      "version": "0.3.7",
+      "type": "module",
+      "main": "lib/index.js",
+      "types": "lib/types/index.d.ts",
+      "license": "MIT",
+      "repository": {
+        "type": "git",
+        "url": "git+https://github.com/awesome-dsh-plugin/dsh-find-plugin.git"
+      },
+      "keywords": [
+        "deepseek",
+        "harness",
+        "dsh",
+        "dsh-plugin",
+        "search",
+        "discovery"
+      ],
+      "scripts": {
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "build": "tsc -p tsconfig.json",
+        "check": "npm run typecheck && npm run build",
+        "prepack": "npm run build"
+      },
+      "peerDependencies": {
+        "@deepseek-ai/cordis": "^4.0.1",
+        "@deepseek-ai/dsh-tools": "^0.1.0-rc.6"
+      },
+      "dsh": {
+        "bundle": {
+          "patch": "./cordis.patch.yml"
+        }
+      },
+      "exports": {
+        ".": {
+          "types": "./lib/types/index.d.ts",
+          "default": "./lib/index.js"
+        },
+        "./cordis.patch.yml": "./cordis.patch.yml",
+        "./package.json": "./package.json"
+      },
+      "devDependencies": {
+        "@deepseek-ai/cordis": "^4.0.1",
+        "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
+        "@types/node": "^26.2.0",
+        "typescript": "^7.0.2"
+      },
+      "publishConfig": {
+        "registry": "https://registry.npmjs.org/"
+      },
+      "gitHead": "e7a27eb01606e6deccdaacccb8e0cfd992c0bcdc",
+      "_id": "dsh-find-plugin@0.3.7",
+      "bugs": {
+        "url": "https://github.com/awesome-dsh-plugin/dsh-find-plugin/issues"
+      },
+      "homepage": "https://github.com/awesome-dsh-plugin/dsh-find-plugin#readme",
+      "_nodeVersion": "22.23.2",
+      "_npmVersion": "12.0.2",
+      "dist": {
+        "integrity": "sha512-yqvG58ci3+c7DsNJ515TFyu8IK5Jc249DQma8wQ2DavUpmU9avzKAyZ8V41tHB5mZrC09xrEhNFcZzj3qgODtQ==",
+        "shasum": "c2793e3709e145cb6cae536176bc230ea7d75b7c",
+        "tarball": "https://registry.npmjs.org/dsh-find-plugin/-/dsh-find-plugin-0.3.7.tgz",
+        "fileCount": 15,
+        "unpackedSize": 108832,
+        "attestations": {
+          "url": "https://registry.npmjs.org/-/npm/v1/attestations/dsh-find-plugin@0.3.7",
+          "provenance": {
+            "predicateType": "https://slsa.dev/provenance/v1"
+          }
+        },
+        "signatures": [
+          {
+            "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+            "sig": "MEUCIEJuY/JVTgBMQ7bIG65CxAktREDu7OHiSpe6dZ576knHAiEAv6Dg19CIeAcuSCe7W1pFukPupXtNK8+CUDCm6x6z1a0="
+          }
+        ]
+      },
+      "_npmUser": {
+        "name": "GitHub Actions",
+        "email": "npm-oidc-no-reply@github.com",
+        "trustedPublisher": {
+          "id": "github",
+          "oidcConfigId": "oidc:79fe1741-8c49-47f2-95c0-7d28e474bfb6"
+        }
+      },
+      "directories": {},
+      "maintainers": [
+        {
+          "name": "fkysly",
+          "email": "fkysly@gmail.com"
+        }
+      ],
+      "_npmOperationalInternal": {
+        "host": "s3://npm-registry-packages-npm-production",
+        "tmp": "tmp/dsh-find-plugin_0.3.7_1787117107404_0.26172820199184565"
+      },
+      "_hasShrinkwrap": false
+    },
+    "repo": {
+      "type": "git",
+      "url": "git+https://github.com/awesome-dsh-plugin/dsh-find-plugin.git"
+    },
+    "description": "Find DeepSeek Harness plugins inside the agent — live GitHub dsh-plugin topic search, ranked by stars."
+  },
+  "ghTotal": 9055,
+  "ghRepos": [
+    {
+      "full_name": "deepseek-ai/deepseek-harness",
+      "stars": 172174,
+      "pushed": "2026-08-19T15:37:57Z",
+      "desc": "DeepSeek Harness: Everything is a Plugin.",
+      "topics": [
+        "ai-agents",
+        "cordis",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "nexu-io/open-design",
+      "stars": 89622,
+      "pushed": "2026-08-20T14:24:34Z",
+      "desc": "🎨 Best DeepSeek Harness Design Plugin. The open-source Claude Design alternative. 🖥️ Local-first desktop app. 🖼️ Your",
+      "topics": [
+        "agent-skills",
+        "ai-design",
+        "byok",
+        "claude-code-for-design",
+        "claude-design",
+        "codex-design",
+        "coding-agents",
+        "cursor-design",
+        "deepseek",
+        "deepseek-harness",
+        "design-systems",
+        "desktop-app",
+        "dsh",
+        "dsh-plugin",
+        "figma-alternative",
+        "hermes-agent",
+        "local-first",
+        "prototyping",
+        "ui-generator",
+        "vibe-coding"
+      ]
+    },
+    {
+      "full_name": "amruthpillai/reactive-resume",
+      "stars": 41283,
+      "pushed": "2026-08-20T08:56:18Z",
+      "desc": "A one-of-a-kind resume builder that keeps your privacy in mind. Completely secure, customizable, portable, open-source a",
+      "topics": [
+        "agent-skills",
+        "ai",
+        "dsh-plugin",
+        "hacktoberfest",
+        "javascript",
+        "mcp-server",
+        "react",
+        "resume-builder",
+        "self-hosted",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "esengine/DeepSeek-Reasonix",
+      "stars": 34919,
+      "pushed": "2026-08-20T13:18:37Z",
+      "desc": "DeepSeek-native AI coding agent for your terminal. Engineered around prefix-cache stability — leave it running.",
+      "topics": [
+        "agent",
+        "agent-framework",
+        "ai-agent",
+        "ai-coding",
+        "cli",
+        "coding-agent",
+        "deepseek",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "ink",
+        "llm",
+        "prompt-caching",
+        "r1",
+        "terminal",
+        "tool-use",
+        "tui",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "volcengine/OpenViking",
+      "stars": 30812,
+      "pushed": "2026-08-20T13:52:55Z",
+      "desc": "Self-evolving Context Database for AI Agents. Unify Agent Memory, Knowledge RAG and Skills.",
+      "topics": [
+        "agent-memory",
+        "agent-plugins",
+        "agentic-rag",
+        "context-database",
+        "dsh-plugin",
+        "self-evolving"
+      ]
+    },
+    {
+      "full_name": "titanwings/colleague-skill",
+      "stars": 23622,
+      "pushed": "2026-08-19T11:11:54Z",
+      "desc": "将冰冷的离别化为温暖的 Skill，欢迎加入数字生命1.0！Transforming cold farewells into warm skills? It's giving rebirth era. Welcome to Digital ",
+      "topics": [
+        "agent-skills",
+        "agentic-ai",
+        "ai-agent",
+        "ai-persona",
+        "claude-code",
+        "claude-code-skills",
+        "codex",
+        "codex-skills",
+        "deepseek-harness",
+        "digital-human",
+        "dsh-plugin",
+        "hermes-agent",
+        "knowledge-distillation",
+        "llm-agent",
+        "meta-skill",
+        "openclaw",
+        "prompt-engineering",
+        "skill-generator"
+      ]
+    },
+    {
+      "full_name": "Nagi-ovo/voyager",
+      "stars": 19722,
+      "pushed": "2026-08-16T00:11:26Z",
+      "desc": "Enhancement suite for Gemini, AI Studio, Claude & ChatGPT — plus a prompt manager for any web UI, DeepSeek Harness inclu",
+      "topics": [
+        "ai-studio",
+        "browser-extension",
+        "bun",
+        "chat-management",
+        "chatgpt",
+        "chrome-extension",
+        "claude-ai",
+        "dsh",
+        "dsh-plugin",
+        "edge-addon",
+        "firefox-addons",
+        "gemini",
+        "safari-extension"
+      ]
+    },
+    {
+      "full_name": "anywhere-labs/deepseek-harness-desktop",
+      "stars": 16265,
+      "pushed": "2026-08-20T12:31:13Z",
+      "desc": "为 DeepSeek Harness (DSH) 插件生态打造的现代化桌面端解决方案。万物皆「插件」，桌面本身也是「插件」。",
+      "topics": [
+        "cordis",
+        "cordis-plugin",
+        "deepseek",
+        "deepseek-harness",
+        "desktop",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugin-desktop"
+      ]
+    },
+    {
+      "full_name": "tt-a1i/archify",
+      "stars": 14675,
+      "pushed": "2026-08-20T12:16:54Z",
+      "desc": "Agent skill for beautiful, verifiable architecture, workflow, sequence, data-flow, and lifecycle diagrams—self-contained",
+      "topics": [
+        "agent-skills",
+        "architecture-as-code",
+        "architecture-diagram",
+        "claude-skill",
+        "code-visualization",
+        "codex",
+        "coding-agents",
+        "data-flow-diagram",
+        "deepseek-harness",
+        "developer-tools",
+        "diagram-as-code",
+        "diagrams",
+        "diagrams-as-code",
+        "dsh-plugin",
+        "mermaid-alternative",
+        "opencode",
+        "sequence-diagram",
+        "software-architecture",
+        "system-design",
+        "text-to-diagram"
+      ]
+    },
+    {
+      "full_name": "walkinglabs/learn-harness-engineering",
+      "stars": 13053,
+      "pushed": "2026-08-19T09:42:52Z",
+      "desc": "Harness engineering beginner tutorial, from 0 to 1",
+      "topics": [
+        "agent",
+        "agentic",
+        "agentic-ai",
+        "ai",
+        "ai-agent",
+        "ai-agents",
+        "dsh",
+        "dsh-plugin",
+        "harness",
+        "harness-engineering",
+        "harness-framework",
+        "llm"
+      ]
+    },
+    {
+      "full_name": "EverMind-AI/EverOS",
+      "stars": 12247,
+      "pushed": "2026-08-17T11:51:02Z",
+      "desc": "One portable memory layer for every AI agent: local-first, Markdown-native, user-owned, and self-evolving across apps, t",
+      "topics": [
+        "agent-memory",
+        "agentic-ai",
+        "ai",
+        "chats",
+        "clawdbot",
+        "clawdbot-skill",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "llm",
+        "long-term-memory",
+        "mcp",
+        "memory",
+        "memory-management",
+        "python3",
+        "rag",
+        "skills"
+      ]
+    },
+    {
+      "full_name": "freestylefly/awesome-gpt-image-2",
+      "stars": 11430,
+      "pushed": "2026-08-20T07:04:27Z",
+      "desc": "Prompt as Code | GPT-Image2 工业级提示词引擎与模板库，470+ 个案例逆向工程，20+ 套工业级模板，并提炼出Skills，持续更新中",
+      "topics": [
+        "agents",
+        "ai-image-generation",
+        "chatgpt",
+        "dsh-plugin",
+        "gpt-image-2",
+        "image-prompts",
+        "prompt-as-code",
+        "prompt-engineering",
+        "skills",
+        "workflow-automation"
+      ]
+    },
+    {
+      "full_name": "MemTensor/MemOS",
+      "stars": 10843,
+      "pushed": "2026-08-20T14:15:01Z",
+      "desc": "Self-evolving memory OS for LLM & AI Agents: ultra-persistent memory, hybrid-retrieval, and cross-task skill reuse, with",
+      "topics": [
+        "agent",
+        "agentic-ai",
+        "ai",
+        "ai-agents",
+        "chatgpt",
+        "claude",
+        "deepseek-harness",
+        "dsh-plugin",
+        "hermes",
+        "llm",
+        "long-term-memory",
+        "mcp",
+        "memory",
+        "memory-management",
+        "openclaw",
+        "rag",
+        "self-evolving",
+        "self-hosted",
+        "skills",
+        "token-savings"
+      ]
+    },
+    {
+      "full_name": "awesome-dsh-plugin/awesome-dsh-plugin",
+      "stars": 10533,
+      "pushed": "2026-08-20T13:05:36Z",
+      "desc": "A curated list of plugins for DeepSeek Harness (dsh) · DeepSeek Harness 插件精选列表",
+      "topics": [
+        "awesome",
+        "awesome-list",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "YaoApp/yao",
+      "stars": 7731,
+      "pushed": "2026-08-19T04:45:36Z",
+      "desc": "✨ All your agents and workspaces in one place, on every device you own. Track tasks on a board, accessible from desktop,",
+      "topics": [
+        "agent-harness",
+        "agent-orchestration",
+        "agent-skills",
+        "agent-workspaces",
+        "ai-agents",
+        "ai-native",
+        "claude-code",
+        "coding-agent",
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "local-first",
+        "mcp",
+        "no-code",
+        "own-your-data",
+        "tool-use"
+      ]
+    },
+    {
+      "full_name": "Q00/ouroboros",
+      "stars": 5588,
+      "pushed": "2026-08-20T09:59:49Z",
+      "desc": "Agent OS: the agent gets smarter on its own. We just hold the line: the grading command and expected result never make i",
+      "topics": [
+        "agent-os",
+        "agentic-ai",
+        "ai-agent",
+        "ai-coding-agent",
+        "claude-code",
+        "cli",
+        "codex",
+        "coding-agent",
+        "deepseek",
+        "deepseek-harness",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "github-copilot",
+        "llm-evaluation",
+        "llm-orchestration",
+        "loop-engineering",
+        "mcp",
+        "opencode"
+      ]
+    },
+    {
+      "full_name": "ZSeven-W/openpencil",
+      "stars": 5460,
+      "pushed": "2026-08-20T01:48:34Z",
+      "desc": "The world's first open-source AI-native vector design tool and the first to feature concurrent Agent Teams. Design-as-Co",
+      "topics": [
+        "agent",
+        "agent-team",
+        "ai",
+        "claude",
+        "claude-code",
+        "codex",
+        "dsh-plugin",
+        "fimga",
+        "flutter",
+        "mcp",
+        "opencode",
+        "openpencil",
+        "pencil",
+        "react",
+        "react-native",
+        "rust",
+        "skill",
+        "ui",
+        "vibecoding",
+        "vibedesign"
+      ]
+    },
+    {
+      "full_name": "zhu1090093659/dsh-web-ui",
+      "stars": 5119,
+      "pushed": "2026-08-20T14:23:56Z",
+      "desc": "Plugin and skin collection for DeepSeek Harness (DSH) Web UI - task board, git graph, right-side panel, remote mobile UI",
+      "topics": [
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "web-ui"
+      ]
+    },
+    {
+      "full_name": "Devin-AXIS/iPolloWork",
+      "stars": 4316,
+      "pushed": "2026-08-20T13:35:49Z",
+      "desc": "A next-generation, source-available AI workspace with a self-evolving agent runtime for editable code, design, presentat",
+      "topics": [
+        "agent-collaboration",
+        "agent-skills",
+        "ai-agents",
+        "ai-work",
+        "claude-code",
+        "codex",
+        "deepseek-harness",
+        "dsh-plugin",
+        "enterprise-agent-workspace",
+        "hermes-agent",
+        "ipollowork-plugin",
+        "ipollowork-skill",
+        "openclaw",
+        "opencode",
+        "opencode-plugin",
+        "self-evolving-ai",
+        "visual-editor"
+      ]
+    },
+    {
+      "full_name": "crafter-station/petdex",
+      "stars": 3935,
+      "pushed": "2026-08-20T05:22:10Z",
+      "desc": "A public gallery of animated pets for Codex, Claude Code, DeepSeek Harness, Hermes, OpenCode, Gemini CLI, and more.",
+      "topics": [
+        "claude-code",
+        "clerk",
+        "cli",
+        "codex",
+        "developer-tools",
+        "drizzle-orm",
+        "dsh-plugin",
+        "mascot",
+        "neon",
+        "nextjs",
+        "pixel-art",
+        "postgres",
+        "react",
+        "sprites",
+        "tailwindcss",
+        "vercel"
+      ]
+    },
+    {
+      "full_name": "xiaobright/dsh-anchored-standard",
+      "stars": 3672,
+      "pushed": "2026-08-17T06:19:58Z",
+      "desc": "Two-phase DeepSeek Harness preset: Minimal-aligned bootstrap, then full Standard tools (Project2 98/99)",
+      "topics": [
+        "deepseek",
+        "deepseek-harness",
+        "dsh-plugin",
+        "llm-agent"
+      ]
+    },
+    {
+      "full_name": "strukto-ai/mirage",
+      "stars": 3540,
+      "pushed": "2026-08-20T14:10:53Z",
+      "desc": "The World's First Unified Virtual Filesystem For AI Agents",
+      "topics": [
+        "agent-sandbox",
+        "agent-tools",
+        "ai-agents",
+        "bash",
+        "claude-code",
+        "dsh",
+        "dsh-plugin",
+        "fuse",
+        "llm-agents",
+        "openai-agents",
+        "python",
+        "typescript",
+        "vfs",
+        "virtual-filesystem"
+      ]
+    },
+    {
+      "full_name": "liustack/modlens",
+      "stars": 3381,
+      "pushed": "2026-08-20T14:19:24Z",
+      "desc": "The first vision plugin for DeepSeek Harness, and the vision bridge for every text-only coding agent. Paste an image, ge",
+      "topics": [
+        "agent-skills",
+        "claude-code",
+        "claude-skills",
+        "codex",
+        "cordis",
+        "deepseek",
+        "dsh",
+        "dsh-plugin",
+        "glm",
+        "harness",
+        "harness-engineering",
+        "hermes-agent",
+        "image-to-text",
+        "multimodal",
+        "ocr",
+        "openclaw",
+        "pi-agent",
+        "text-only-llm",
+        "vision",
+        "vision-transformer"
+      ]
+    },
+    {
+      "full_name": "edison7009/EchoBird",
+      "stars": 3093,
+      "pushed": "2026-08-20T13:10:21Z",
+      "desc": "One-click install + model switch:Claude Code,Codex CLI (OpenAI), Grok Build (xAI), DeepSeek Harness, Kimi Code (Moonshot",
+      "topics": [
+        "claude-code",
+        "deepseek",
+        "deepseek-harness",
+        "dsh-plugin",
+        "dsh-plugins",
+        "kimi-code",
+        "openclaw",
+        "opencode",
+        "zcode"
+      ]
+    },
+    {
+      "full_name": "Tiger3807861189/J-Space-Cognition-Suite-V3.6",
+      "stars": 2985,
+      "pushed": "2026-08-19T01:51:18Z",
+      "desc": "J-Space Cognition Suite V3.6 - AI cognitive-enhancement Skills based on Anthropic's J-space global workspace research. |",
+      "topics": [
+        "agent-skills",
+        "ai",
+        "ai-agent",
+        "ai-agents",
+        "claude-code",
+        "codex",
+        "cognitive-enhancement",
+        "deepseek",
+        "deepseek-harness",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "global-workspace",
+        "hermes-agent",
+        "inference-time-control",
+        "j-space",
+        "opencode",
+        "react",
+        "tailwindcss"
+      ]
+    },
+    {
+      "full_name": "whiteguo233/OpenBiliClaw",
+      "stars": 2953,
+      "pushed": "2026-08-20T12:45:14Z",
+      "desc": "本地私有、开源的自进化跨平台 AI 内容发现 Agent：先理解你，再主动从 B站、小红书、抖音、YouTube、X、知乎、Reddit、微博等平台与开放 Web 寻找内容。（支持 deepseek harness 插件） | Local-",
+      "topics": [
+        "ai-agent",
+        "bilibili",
+        "chrome-extension",
+        "content-discovery",
+        "cross-platform",
+        "deepseek-harness",
+        "douyin",
+        "dsh",
+        "dsh-plugin",
+        "llm",
+        "local-first",
+        "personal-ai",
+        "privacy-first",
+        "python",
+        "recommendation-system",
+        "self-hosted",
+        "typescript",
+        "xiaohongshu",
+        "youtube",
+        "zhihu"
+      ]
+    },
+    {
+      "full_name": "foryourhealth111-pixel/Vibe-Skills",
+      "stars": 2924,
+      "pushed": "2026-08-11T15:42:32Z",
+      "desc": "VibeSkills is a general-purpose Skill that automatically routes local Skills and intelligently orchestrates harness work",
+      "topics": [
+        "agent-framework",
+        "agent-skills",
+        "agentic-coding",
+        "ai-agents",
+        "ai-scientist",
+        "ai-skills",
+        "ai-workflow",
+        "automation",
+        "claude-code",
+        "codex",
+        "context-engineering",
+        "developer-tools",
+        "dsh-plugin",
+        "llm",
+        "multi-agent",
+        "prompt-engineering",
+        "skills",
+        "vibe-coding",
+        "vibecoding",
+        "workflow-automation"
+      ]
+    },
+    {
+      "full_name": "imsai-sh/zhuzhiliao",
+      "stars": 2847,
+      "pushed": "2026-08-14T14:31:41Z",
+      "desc": "竹知了 —— 一转就哇哇叫的传统玩具，Web 模拟版。零依赖单文件，真实录音采样，移动端优先。",
+      "topics": [
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "omdsh-dev/DSH-better-sidebar",
+      "stars": 2441,
+      "pushed": "2026-08-20T10:28:57Z",
+      "desc": "开放的侧边栏底座，支持三方拓展注册新侧边栏页面。内置文件渲染编辑/终端/Git/子代理页面 ｜ Open sidebar foundation, supports third-party extensions to register new",
+      "topics": [
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-better-sidebar",
+        "dsh-plugin",
+        "sidebar"
+      ]
+    },
+    {
+      "full_name": "chuspeeism/dashi-taskboard",
+      "stars": 2401,
+      "pushed": "2026-08-20T13:55:51Z",
+      "desc": "",
+      "topics": [
+        "claude-code",
+        "cli",
+        "codex",
+        "codex-app",
+        "codex-desktop",
+        "codex-plugin",
+        "dsh",
+        "dsh-plugin",
+        "skills"
+      ]
+    },
+    {
+      "full_name": "ccch1mneyyy/dsh-TUI",
+      "stars": 2168,
+      "pushed": "2026-08-20T14:12:33Z",
+      "desc": "DSH 官方公众号收录的 TUI 补位插件：Claude Code 风，鲸鱼顶栏/实时状态/流式思考/双击 Esc 回滚/上下文进度+TPS。npm 一键装。  DSH official WeChat featured TUI plugin",
+      "topics": [
+        "claude-code",
+        "coding-agent",
+        "deepseek",
+        "deepseek-harness",
+        "dsh-plugin",
+        "ink",
+        "react",
+        "terminal",
+        "tui"
+      ]
+    },
+    {
+      "full_name": "GCWing/BitFun",
+      "stars": 1800,
+      "pushed": "2026-08-20T14:05:32Z",
+      "desc": "BitFun combines a high-performance agent runtime written in Rust with a polished desktop application. It pairs the depth",
+      "topics": [
+        "agent-teams",
+        "agentic",
+        "agentic-os",
+        "agentic-runtime",
+        "ai-coding",
+        "ai-ide",
+        "ai-sdk",
+        "bitfun",
+        "computer-use-agent",
+        "cowork",
+        "dsh-plugin",
+        "openclaw",
+        "vibe-coding"
+      ]
+    },
+    {
+      "full_name": "Small-tailqwq/dsh-deep-whale",
+      "stars": 1503,
+      "pushed": "2026-08-20T08:18:05Z",
+      "desc": "Whale Girl skin series for DeepSeek Harness. 适用于 DeepSeek Harness 的，鲸鱼娘系列皮肤。",
+      "topics": [
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "Jesseovo/last30days-skill-cn",
+      "stars": 1465,
+      "pushed": "2026-07-20T08:55:57Z",
+      "desc": "last30days-cn 是一个 AI Agent 技能（Skill），能够自动搜索中国互联网 8 大主流平台最近 30 天的内容，综合分析后生成有据可查的研究报告。",
+      "topics": [
+        "claude-code",
+        "dsh-plugin",
+        "openclaw",
+        "openclaw-skills",
+        "rednotebook",
+        "research",
+        "tiktok",
+        "web-search"
+      ]
+    },
+    {
+      "full_name": "dsh-market/dsh-market",
+      "stars": 1402,
+      "pushed": "2026-08-20T14:12:16Z",
+      "desc": "The plugin market inside DeepSeek Harness — browse, search, one-click install · DSH 可视化插件市场",
+      "topics": [
+        "deepseek-harness",
+        "dsh-plugin",
+        "marketplace"
+      ]
+    },
+    {
+      "full_name": "Alisa0808/vox-director",
+      "stars": 1401,
+      "pushed": "2026-08-11T15:39:41Z",
+      "desc": "Turn one topic into a finished Vox-style paper-collage explainer/ad video — automated end to end on Atlas Cloud + ffmpeg",
+      "topics": [
+        "ai",
+        "ai-video",
+        "claude-code",
+        "claude-skill",
+        "collage-video",
+        "dsh-plugin",
+        "explainer-video",
+        "ffmpeg",
+        "generative-ai",
+        "llm",
+        "motion-graphics",
+        "python",
+        "text-to-video",
+        "tts",
+        "video",
+        "video-generation",
+        "vox"
+      ]
+    },
+    {
+      "full_name": "hyhmrright/brooks-lint",
+      "stars": 1393,
+      "pushed": "2026-08-20T14:20:43Z",
+      "desc": "AI code reviews grounded in 12 classic engineering books — decay risk diagnostics with book citations, severity labels, ",
+      "topics": [
+        "agent-skills",
+        "ai-code-review",
+        "architecture-review",
+        "auto-fix",
+        "claude-code",
+        "claude-code-plugin",
+        "clean-architecture",
+        "code-health",
+        "code-quality",
+        "code-review",
+        "code-smells",
+        "codex-cli-plugin",
+        "deepseek-harness",
+        "developer-tools",
+        "dsh-plugin",
+        "gemini-cli-extension",
+        "refactoring",
+        "static-analysis",
+        "tech-debt",
+        "test-quality"
+      ]
+    },
+    {
+      "full_name": "AdamPlatin123/awesome-dsh-plugins",
+      "stars": 1275,
+      "pushed": "2026-08-20T13:15:15Z",
+      "desc": "DSH 插件雷达与精选榜：多路自动发现 9000+ 候选，容器真实安装路径运行级实测（四档判定），精选 Top 50 · 11 类人工策展，全量索引 PLUGINS-ALL.md，自动更新。",
+      "topics": [
+        "agent-plugins",
+        "awesome-list",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "plugin-registry"
+      ]
+    },
+    {
+      "full_name": "Tencent/BrowserSkill",
+      "stars": 1220,
+      "pushed": "2026-08-20T12:45:25Z",
+      "desc": "Let AI agents use your real, logged-in browser without interrupting your work. CLI + extension for browser automation ac",
+      "topics": [
+        "agent",
+        "browser-use",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "mem9-ai/mem9",
+      "stars": 1191,
+      "pushed": "2026-08-19T10:21:49Z",
+      "desc": "Unlimited memory for OpenClaw",
+      "topics": [
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "alvinunreal/openpets",
+      "stars": 1091,
+      "pushed": "2026-08-18T18:00:52Z",
+      "desc": "Local first, desktop companion platform with animated pets, plugin SDK and coding-agent integrations.",
+      "topics": [
+        "ai-agents",
+        "claude-code",
+        "coding-agents",
+        "desktop-companion",
+        "desktop-pet",
+        "dsh-plugin",
+        "electron",
+        "mcp",
+        "opencode",
+        "openpets",
+        "plugin-sdk",
+        "plugins",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "paean-ai/deeptide",
+      "stars": 1088,
+      "pushed": "2026-07-08T09:37:30Z",
+      "desc": "Built by DeepSeek, for DeepSeek — a Swift-native macOS coding agent",
+      "topics": [
+        "coding-agent",
+        "deepseek",
+        "deepseek-harness",
+        "dsh-plugin",
+        "macos",
+        "swift"
+      ]
+    },
+    {
+      "full_name": "agentrq/agentrq",
+      "stars": 1084,
+      "pushed": "2026-08-20T04:50:25Z",
+      "desc": "AgentRQ: Human-in-loop realtime conversational task manager for AI Agents. Self-hosted! Control your own agents from whe",
+      "topics": [
+        "acp-client",
+        "acp-gateway",
+        "agentic-ai",
+        "agentic-workflow",
+        "agents",
+        "claude-code",
+        "deepseek-harness",
+        "deepseek-harness-plugin",
+        "dsh-plugin",
+        "hermes-agent",
+        "mcp",
+        "mcp-server",
+        "openclaw",
+        "opencode",
+        "supervisor",
+        "task",
+        "task-manager",
+        "task-scheduler",
+        "todo"
+      ]
+    },
+    {
+      "full_name": "GanyuanRan/Aegis",
+      "stars": 1084,
+      "pushed": "2026-08-19T12:16:35Z",
+      "desc": "Make AI coding agents architecture-aware: baseline-first, evidence-verified, drift-checked, and safe across long tasks.",
+      "topics": [
+        "agent-skills",
+        "ai-agents",
+        "ai-coding",
+        "architecture-driven-development",
+        "awsome-coding-plugin",
+        "baseline-first",
+        "claude-code",
+        "codex",
+        "coding-agents",
+        "dive",
+        "dsh-plugin",
+        "evidence-driven",
+        "first-principles",
+        "opencode",
+        "software-architecture",
+        "spec-driven-development",
+        "spec-kit"
+      ]
+    },
+    {
+      "full_name": "Anionex/agent-vision-toolkit",
+      "stars": 1082,
+      "pushed": "2026-08-20T09:05:11Z",
+      "desc": "为纯文本模型\"看图“设计更好的视觉工具箱和技能，支持多图理解，图片问答，前端UI还原、GUI 自动化等，并可选无缝接入多个主流agent，直接识别粘贴图片｜ A vision toolkit and skill designed for t",
+      "topics": [
+        "agent",
+        "agent-skills",
+        "claude-code",
+        "codex",
+        "computer-use",
+        "deepseek",
+        "dsh-plugin",
+        "glm",
+        "harness-engineering",
+        "multimodal",
+        "opencode",
+        "text-only-llm",
+        "vision",
+        "vision-language-model"
+      ]
+    },
+    {
+      "full_name": "TencentCloudBase/CloudBase-AI-Toolkit",
+      "stars": 1073,
+      "pushed": "2026-08-20T12:16:09Z",
+      "desc": "Backend for AI coding agents on CloudBase — database, auth, functions via Plugin, Skills & MCP.",
+      "topics": [
+        "agent-skills",
+        "ai",
+        "aicoding",
+        "claude-code",
+        "cloudbase",
+        "cursor",
+        "database",
+        "dsh-plugin",
+        "mcp",
+        "mcp-server",
+        "miniprogram",
+        "postgresql",
+        "supabase",
+        "tencent",
+        "vibe-coding",
+        "web"
+      ]
+    },
+    {
+      "full_name": "Tiger3807861189/DeepSeek-V4-J-Space-Capability-Realization-Report",
+      "stars": 1032,
+      "pushed": "2026-08-18T15:50:43Z",
+      "desc": "DeepSeek V4 × J-Space capability realization report — benchmark evidence that J-Space reduces capability-realization los",
+      "topics": [
+        "agent-skills",
+        "ai-agent",
+        "benchmark",
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "PicGo/PicGo-Core",
+      "stars": 980,
+      "pushed": "2026-08-17T07:40:00Z",
+      "desc": ":zap:The ultimate image uploading engine. Both CLI & API supports.",
+      "topics": [
+        "dsh-plugin",
+        "picgo",
+        "picture-upload",
+        "upload-pictures"
+      ]
+    },
+    {
+      "full_name": "Anil-matcha/awesome-dsh-plugin",
+      "stars": 964,
+      "pushed": "2026-08-20T04:53:08Z",
+      "desc": "A curated list of plugins for DeepSeek Harness (dsh) - DeepSeek Harness plugin ecosystem",
+      "topics": [
+        "agent-harness",
+        "ai-agent",
+        "ai-agents",
+        "autonomous-agent",
+        "awesome",
+        "awesome-list",
+        "cli",
+        "coding-agent",
+        "cordis",
+        "deepseek",
+        "deepseek-harness",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "llm",
+        "llm-agent",
+        "open-source",
+        "plugin-ecosystem",
+        "plugins",
+        "web-ui"
+      ]
+    },
+    {
+      "full_name": "vostride/agent-qa",
+      "stars": 953,
+      "pushed": "2026-08-03T18:44:59Z",
+      "desc": "Open-source self-improving QA agent for software teams. A test harness with memory. Write tests in natural language for ",
+      "topics": [
+        "ai-agents",
+        "ai-testing",
+        "anthropic",
+        "autonomous-agents",
+        "browser-automation",
+        "chatgpt",
+        "claude-code",
+        "clawdbot",
+        "codex",
+        "developer-tools",
+        "dsh-plugin",
+        "end-to-end-testing",
+        "frontend",
+        "mcp",
+        "mcp-server",
+        "mcp-tools",
+        "model-context-protocol",
+        "openai",
+        "playwright",
+        "qa-automation"
+      ]
+    },
+    {
+      "full_name": "mindscale-noah/MindMemOS",
+      "stars": 944,
+      "pushed": "2026-08-20T11:55:34Z",
+      "desc": "",
+      "topics": [
+        "agent",
+        "agent-memory",
+        "agent-skills",
+        "agentic",
+        "dsh-plugin",
+        "dsh-plugins",
+        "openclaw",
+        "openclaw-agent",
+        "openclaw-plugin",
+        "rag",
+        "skills"
+      ]
+    },
+    {
+      "full_name": "ysr666/dsh-vision-router",
+      "stars": 890,
+      "pushed": "2026-08-20T14:17:28Z",
+      "desc": "Eyes for text-only DeepSeek Harness agents: built-in free vision chain (no key) + pixel-level vision tools (Q&A, groundi",
+      "topics": [
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "multimodal",
+        "vision"
+      ]
+    },
+    {
+      "full_name": "tong-io/tongflow",
+      "stars": 887,
+      "pushed": "2026-08-19T13:30:54Z",
+      "desc": "TongFlow — multimodal workflow studio and engine (canvas + Python plugin engine) and dsh-tongflow, the DeepSeek Harness ",
+      "topics": [
+        "3d",
+        "agent",
+        "ai",
+        "ai-tools",
+        "aigc",
+        "canvas",
+        "deepseek-harness",
+        "document",
+        "dsh-plugin",
+        "genai",
+        "generative-ai",
+        "image",
+        "link",
+        "multimodal",
+        "studio",
+        "tongflow",
+        "video",
+        "voice",
+        "workflow"
+      ]
+    },
+    {
+      "full_name": "freestylefly/wesight",
+      "stars": 886,
+      "pushed": "2026-08-06T08:32:46Z",
+      "desc": "Open-source desktop AI agent workspace with one-click Claude Code, Codex, OpenClaw, Hermes Agent setup and custom LLM mo",
+      "topics": [
+        "agent-skills",
+        "agent-workspace",
+        "ai-agent",
+        "ai-agents",
+        "claude-code",
+        "codex",
+        "deepseek-harness",
+        "desktop-app",
+        "dsh",
+        "dsh-plugin",
+        "electron",
+        "hermes-agent",
+        "llm",
+        "local-first",
+        "macos",
+        "model-router",
+        "openclaw",
+        "react",
+        "typescript",
+        "vibe-coding"
+      ]
+    },
+    {
+      "full_name": "xyTom/coding-tools-mcp",
+      "stars": 841,
+      "pushed": "2026-08-18T20:03:04Z",
+      "desc": "Give any AI agent the ability to code",
+      "topics": [
+        "dsh-plugin",
+        "mcp",
+        "mcp-server"
+      ]
+    },
+    {
+      "full_name": "MemTensor/memmy-agent",
+      "stars": 825,
+      "pushed": "2026-08-20T13:07:08Z",
+      "desc": "🍙  A personal AI agent & local memory hub for all AI agents, gives every AI one shared, fully controlled memory and per",
+      "topics": [
+        "agent",
+        "agentic-ai",
+        "ai-agents",
+        "chatgpt",
+        "claude-code",
+        "cli",
+        "codex",
+        "cursor",
+        "desktop-app",
+        "desktop-pet",
+        "dsh-plugin",
+        "hermes-agent",
+        "llm",
+        "long-term-memory",
+        "mcp",
+        "memory",
+        "openai-api",
+        "openclaw",
+        "personal-ai",
+        "tui"
+      ]
+    },
+    {
+      "full_name": "toby-bridges/api-relay-audit",
+      "stars": 796,
+      "pushed": "2026-08-15T19:22:01Z",
+      "desc": "Local security audit for AI API relays and LLM proxies: detects prompt injection, model substitution, tool-call rewritin",
+      "topics": [
+        "ai-agents",
+        "ai-audit",
+        "ai-security",
+        "anthropic",
+        "api-gateway",
+        "claude",
+        "dsh-plugin",
+        "llm-audit",
+        "llm-proxy",
+        "llm-security",
+        "model-substitution",
+        "openai-api",
+        "prompt-injection",
+        "python",
+        "security-audit",
+        "security-scanner",
+        "supply-chain-security",
+        "tool-call-rewriting",
+        "web3-security",
+        "web3-wallet"
+      ]
+    },
+    {
+      "full_name": "Anionex/dsh-vision-toolkit",
+      "stars": 783,
+      "pushed": "2026-08-20T14:04:29Z",
+      "desc": "[dsh]为纯文本模型设计更强大的视觉工具箱：安装免费使用、粘贴图片直接识别、多张图片问答、截图到前端UI 还原等｜DeepSeek Harness-native integration for agent-vision-toolkit: ",
+      "topics": [
+        "agent-skills",
+        "agent-vision-toolkit",
+        "computer-vision",
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "gui-automation",
+        "ocr",
+        "plugin",
+        "python",
+        "screenshot-testing",
+        "text-only-llm",
+        "typescript",
+        "ui-restoration",
+        "vision-language-model",
+        "vision-tools"
+      ]
+    },
+    {
+      "full_name": "0xsline/awesome-deepseek-harness",
+      "stars": 765,
+      "pushed": "2026-08-20T09:28:41Z",
+      "desc": "DeepSeek Harness (DSH) ecosystem: curated plugins, tools, and infrastructure from dsh-external/hub and the public dsh-pl",
+      "topics": [
+        "agent",
+        "ai",
+        "ai-agents",
+        "ai-tools",
+        "awesome",
+        "awesome-list",
+        "coding-assistant",
+        "curated-list",
+        "deepseek",
+        "deepseek-harness",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugins",
+        "harness",
+        "llm",
+        "mcp",
+        "plugins"
+      ]
+    },
+    {
+      "full_name": "hellowind777/helloagents",
+      "stars": 692,
+      "pushed": "2026-08-14T03:01:12Z",
+      "desc": "一个自主的高级智能伙伴，不仅分析问题，更持续工作直到完成实现和验证。",
+      "topics": [
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "hairyf/deepseek-harness-desktop",
+      "stars": 689,
+      "pushed": "2026-08-20T13:04:37Z",
+      "desc": "DeepSeek Harness Tauri 桌面版 | Only 5mb installer, zero environment setup, preset plugins, Windows / macOS / Linux.",
+      "topics": [
+        "deepseek",
+        "deepseek-harness",
+        "desktop",
+        "dsh",
+        "dsh-plugin",
+        "tauri"
+      ]
+    },
+    {
+      "full_name": "NanmiCoder/dsh-agent-teams",
+      "stars": 674,
+      "pushed": "2026-08-19T16:36:56Z",
+      "desc": "AgentTeams plugin for DeepSeek Harness",
+      "topics": [
+        "agentteams",
+        "deepseekharness",
+        "dsh",
+        "dsh-agent-teams",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "ccch1mneyyy/working-activity",
+      "stars": 654,
+      "pushed": "2026-08-20T08:08:44Z",
+      "desc": "Lively Working-line extension for pi CLI and DSH",
+      "topics": [
+        "deepseek-harness",
+        "dsh-plugin",
+        "pi-coding-agent",
+        "pi-plugin",
+        "statusline",
+        "working-line"
+      ]
+    },
+    {
+      "full_name": "sandbaseai/sandbase-harness",
+      "stars": 629,
+      "pushed": "2026-08-20T06:30:49Z",
+      "desc": "Local-first AI agent runtime with sandboxed sessions, MCP tools, memory, credentials, audit/replay, and a built-in conso",
+      "topics": [
+        "agent-framework",
+        "agent-observability",
+        "agent-plugins",
+        "agent-runtime",
+        "agent-sandbox",
+        "ai-agents",
+        "ai-infrastructure",
+        "deepseek",
+        "deepseek-harness",
+        "deepseek-v4",
+        "docker",
+        "dsh",
+        "dsh-plugin",
+        "local-first",
+        "mcp-server",
+        "model-context-protocol",
+        "openai-compatible",
+        "sandbox",
+        "self-hosted",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "vibeinging/deepseek-harness-desktop-app",
+      "stars": 606,
+      "pushed": "2026-08-15T08:56:28Z",
+      "desc": "DeepSeek Harness Desktop App: a local AI desktop workspace for DSH Sessions, projects, files, web research, plugins, and",
+      "topics": [
+        "agentic-workflows",
+        "ai-agent",
+        "ai-workbench",
+        "data-analysis",
+        "deepseek-harness",
+        "desktop-app",
+        "dsh",
+        "dsh-plugin",
+        "electron",
+        "local-first",
+        "mcp",
+        "model-context-protocol",
+        "office-automation",
+        "react",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "bowenliang123/dsh-context",
+      "stars": 596,
+      "pushed": "2026-08-20T13:59:34Z",
+      "desc": "Best DeepSeek Harness plugin for context insight and management, with context dashboard / browser and context command, f",
+      "topics": [
+        "cordis-plugin",
+        "deepseek-harness",
+        "deepseek-harness-plugin",
+        "dsh-external",
+        "dsh-plugin",
+        "dsh-plugins"
+      ]
+    },
+    {
+      "full_name": "yejiming/MuseAI",
+      "stars": 591,
+      "pushed": "2026-08-14T07:59:06Z",
+      "desc": "创建你的 AI 角色，进入你的故事世界。和角色聊天、冒险、穿书，让每一次互动都留下羁绊（支持 DeepSeek Harness 插件，欢迎使用）",
+      "topics": [
+        "agent",
+        "ai",
+        "companion-ai",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "Electricitysheep/dsh-handbook",
+      "stars": 567,
+      "pushed": "2026-08-18T01:39:45Z",
+      "desc": "DeepSeek Harness (dsh) 从 0 到 1 深度手册：安装/插件开发/性能调优/实测案例/同模型多 Agent 实测对比（中文 + 英文 PDF）",
+      "topics": [
+        "agent",
+        "agent-framework",
+        "ai-agents",
+        "beginners",
+        "deepseek",
+        "deepseek-ai",
+        "dsh-plugin",
+        "getting-started",
+        "guide",
+        "harness",
+        "llm",
+        "tutorial"
+      ]
+    },
+    {
+      "full_name": "adoresever/graph-memory",
+      "stars": 562,
+      "pushed": "2026-08-20T13:19:27Z",
+      "desc": "Deepseek Harness、Openclaw知识图谱记忆插件。2026年4月受邀发布在清华大学讨论会。Knowledge Graph + Memory；Knowledge Graph Context Engine for OpenCl",
+      "topics": [
+        "claude-code",
+        "codex",
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugins",
+        "knowledge-graph",
+        "memory",
+        "openclaw",
+        "openclaw-plugin",
+        "opencode"
+      ]
+    },
+    {
+      "full_name": "superdesigndev/treg",
+      "stars": 527,
+      "pushed": "2026-08-20T12:45:29Z",
+      "desc": "OpenRouter for agent tools. Join community here: https://discord.gg/6mQYYfFMAn",
+      "topics": [
+        "agents",
+        "api-keys",
+        "cli",
+        "credentials",
+        "developer-tools",
+        "dsh-plugin",
+        "mcp",
+        "proxy",
+        "python",
+        "registry",
+        "secrets"
+      ]
+    },
+    {
+      "full_name": "Nagi-ovo/dsh-ads",
+      "stars": 519,
+      "pushed": "2026-08-18T01:28:47Z",
+      "desc": "把 DSH 变成 2005 年门户网站｜Parody ads, fake games, and popups for the DSH Web UI",
+      "topics": [
+        "deepseek-harness",
+        "dsh-plugin",
+        "trolling",
+        "web-ui"
+      ]
+    },
+    {
+      "full_name": "mnemon-dev/mnemon",
+      "stars": 494,
+      "pushed": "2026-08-19T14:43:18Z",
+      "desc": "LLM-supervised persistent memory for AI agents — graph-based recall, cross-session knowledge, single binary. Works with ",
+      "topics": [
+        "agent-framework",
+        "agent-memory",
+        "ai-agent",
+        "ai-tools",
+        "claude",
+        "claude-code",
+        "cli",
+        "context-window",
+        "dsh",
+        "dsh-plugin",
+        "knowledge-graph",
+        "llm-agent",
+        "llm-memory",
+        "llm-supervised",
+        "memory",
+        "openclaw",
+        "persistent-memory"
+      ]
+    },
+    {
+      "full_name": "xiaods/k8e",
+      "stars": 477,
+      "pushed": "2026-08-20T11:19:42Z",
+      "desc": "k8e.sh - OpenSource Agentic AI Sandbox Matrix ",
+      "topics": [
+        "agentic-ai",
+        "dsh-plugin",
+        "k8s",
+        "kubernetes",
+        "sandbox-playground"
+      ]
+    },
+    {
+      "full_name": "syncable-dev/memtrace-public",
+      "stars": 459,
+      "pushed": "2026-08-20T12:12:36Z",
+      "desc": "Structural memory for AI coding agents. Bi-temporal graph, MCP-native, zero LLM calls. Cursor · Claude Code · Codex · De",
+      "topics": [
+        "agent-memory",
+        "ai-agents",
+        "bi-temporal-graph",
+        "claude-code",
+        "code-intelligence",
+        "code-search",
+        "coding-agents",
+        "cursor",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "knowledge-graph",
+        "local-first",
+        "mcp",
+        "mcp-server",
+        "rust",
+        "semantic-search",
+        "structural-memory",
+        "temporal-analysis",
+        "tree-sitter"
+      ]
+    },
+    {
+      "full_name": "hashgraph-online/hol-guard",
+      "stars": 455,
+      "pushed": "2026-08-20T14:12:14Z",
+      "desc": "Open-source antivirus for AI agents: block risky tools, secret access, prompt injection, malicious packages, MCP servers",
+      "topics": [
+        "agent-security",
+        "ai-agent-security",
+        "ai-agents",
+        "ai-antivirus",
+        "ai-security",
+        "claude-code",
+        "codex",
+        "cursor",
+        "devsecops",
+        "dsh-plugin",
+        "gemini-cli",
+        "mcp",
+        "mcp-security",
+        "openclaw",
+        "opencode",
+        "prompt-injection",
+        "runtime-security",
+        "secrets-detection",
+        "security",
+        "supply-chain-security"
+      ]
+    },
+    {
+      "full_name": "omdsh-dev/dsh-at-file",
+      "stars": 439,
+      "pushed": "2026-08-20T09:49:38Z",
+      "desc": "Codex-style @file mentions for DeepSeek Harness: search workspace files in the composer and attach their path to prompts",
+      "topics": [
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "superdesigndev/superdesign-skill",
+      "stars": 436,
+      "pushed": "2026-08-20T09:46:50Z",
+      "desc": "The design skill for Claude Code, Cursor and any coding agent. Stop shipping AI-slop UI: turn it into shippable, tastefu",
+      "topics": [
+        "agent-skills",
+        "ai-design",
+        "claude-code",
+        "claude-skill",
+        "claude-skills",
+        "coding-agent",
+        "cursor",
+        "design-agent",
+        "dsh-plugin",
+        "frontend",
+        "superdesign",
+        "ui-design",
+        "ux-design"
+      ]
+    },
+    {
+      "full_name": "EthanYoQ/AI-Novel-Writer",
+      "stars": 420,
+      "pushed": "2026-08-19T10:44:30Z",
+      "desc": "本地优先 AI 小说创作工作台，提供 Windows/macOS 桌面版与 DeepSeek Harness 插件开发预览，支持角色、大纲、章节蓝图、审稿修稿和本地模型。",
+      "topics": [
+        "ai-writing",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugins",
+        "electron",
+        "fiction-writing",
+        "gemini",
+        "local-first",
+        "novel-writing",
+        "ollama",
+        "react",
+        "typescript",
+        "web-novel"
+      ]
+    },
+    {
+      "full_name": "Ikalus1988/MisakaNet",
+      "stars": 413,
+      "pushed": "2026-08-20T13:16:41Z",
+      "desc": "📚 A zero-dependency, git-backed micro-lesson library for AI Agents to asynchronously share and search verified debuggin",
+      "topics": [
+        "ai-agent",
+        "ai-infra",
+        "claude",
+        "deepseek-harness",
+        "devops",
+        "dsh-plugin",
+        "failure-analysis",
+        "failure-memory",
+        "git-based",
+        "knowledge-sharing",
+        "lesson-database",
+        "mcp",
+        "mcp-server",
+        "multi-agent",
+        "open-source",
+        "python"
+      ]
+    },
+    {
+      "full_name": "fufankeji/deepseek-harness-studio",
+      "stars": 399,
+      "pushed": "2026-08-20T10:56:44Z",
+      "desc": "DeepSeek Harness 零代码桌面端｜一键启动，支持 Windows 与 macOS；内置插件发现、热点插件推送、一键安装与管理、AI 智能推荐和视觉增强。",
+      "topics": [
+        "ai-agent",
+        "deepseek",
+        "deepseek-harness",
+        "deepseek-harness-studio",
+        "desktop-app",
+        "developer-tools",
+        "dsh",
+        "dsh-plugin",
+        "electron",
+        "macos",
+        "plugin-manager",
+        "windows"
+      ]
+    },
+    {
+      "full_name": "ZJU-LLMs/OpenStory",
+      "stars": 381,
+      "pushed": "2026-08-19T04:52:05Z",
+      "desc": "An LLM-powered multi-agent framework for simulating interactive, evolving story worlds.",
+      "topics": [
+        "artificial-intelligence",
+        "dsh-plugin",
+        "large-language-models",
+        "multi-agent-systems",
+        "social-simulation"
+      ]
+    },
+    {
+      "full_name": "yogsoth-ai/de-anthropocentric-research-engine",
+      "stars": 378,
+      "pushed": "2026-08-15T07:14:32Z",
+      "desc": "900+ pure-markdown skills for autonomous AI research, organized as 9 freely-composable packages over a 4-layer hierarchy",
+      "topics": [
+        "academic-research",
+        "agent-native-research-artifact",
+        "ai-scientist",
+        "auto-research",
+        "autonomous-research",
+        "autoresearch",
+        "claude-code",
+        "codex",
+        "deep-research",
+        "dsh-plugin",
+        "literature-review",
+        "mcp",
+        "research-agent",
+        "research-orchestration",
+        "scientific-discovery",
+        "semantic-scholar",
+        "skill"
+      ]
+    },
+    {
+      "full_name": "alibaba/anolisa",
+      "stars": 363,
+      "pushed": "2026-08-20T13:21:12Z",
+      "desc": "ANOLISA (Agentic Nexus Operating Layer & Interface System Architecture) | Agentic OS with runtime, security, observabili",
+      "topics": [
+        "agent-infrastructure",
+        "agent-memory",
+        "agent-runtime",
+        "agent-security",
+        "agentic-ai",
+        "agentic-os",
+        "ai-agents",
+        "context-engineering",
+        "developer-tools",
+        "dsh-plugin",
+        "linux",
+        "observability",
+        "runtime-security",
+        "rust",
+        "sandbox",
+        "skill",
+        "token-optimization"
+      ]
+    },
+    {
+      "full_name": "morluto/rea",
+      "stars": 361,
+      "pushed": "2026-08-14T06:38:37Z",
+      "desc": "Reverse engineer anything with agents, from app behavior down to native binaries.",
+      "topics": [
+        "agent-skills",
+        "ai-agent-tools",
+        "ai-agents",
+        "binary-analysis",
+        "cli",
+        "coding-agent",
+        "coding-agents",
+        "cordis",
+        "decompiler",
+        "disassembler",
+        "dsh",
+        "dsh-plugin",
+        "hopper-disassembler",
+        "mcp",
+        "mcp-server",
+        "model-context-protocol",
+        "reverse-engineering",
+        "reverse-engineering-tools",
+        "static-analysis"
+      ]
+    },
+    {
+      "full_name": "Lum1104/dsh-browser",
+      "stars": 346,
+      "pushed": "2026-08-19T16:27:55Z",
+      "desc": "dsh plugin: Chrome sidebar extension that lets DeepSeek Harness operate your browser directly, no vision capabilities re",
+      "topics": [
+        "browser-automation",
+        "chrome-extension",
+        "coding-agent",
+        "cordis",
+        "deepseek",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "tingly-dev/tingly-box",
+      "stars": 342,
+      "pushed": "2026-08-20T11:49:40Z",
+      "desc": "Your Intelligence, Orchestrated. Every builder. Every team. Every agent. For Everyone.",
+      "topics": [
+        "claude-code",
+        "dsh-plugin",
+        "gateway",
+        "llm",
+        "remote-control"
+      ]
+    },
+    {
+      "full_name": "PM-Shawn/Abu-Cowork",
+      "stars": 341,
+      "pushed": "2026-08-20T10:42:31Z",
+      "desc": "Open-source alternative to Claude Cowork — a local-first AI agent desktop app · multi-model · self-evolving skills · pri",
+      "topics": [
+        "agent",
+        "agent-framework",
+        "agentic-ai",
+        "agents",
+        "ai-agent",
+        "ai-assistant",
+        "automation",
+        "desktop-app",
+        "desktop-automation",
+        "dsh-plugin",
+        "dsh-plugins",
+        "llm",
+        "local-first",
+        "mcp",
+        "privacy",
+        "productivity",
+        "react",
+        "tauri",
+        "typescript"
+      ]
+    },
+    {
+      "full_name": "WYH66666666/DSH-Transparent-UI-Plugin",
+      "stars": 341,
+      "pushed": "2026-08-20T09:08:56Z",
+      "desc": "是一层高自由度的玻璃质感主题，套在 DeepSeek Harness 网页端。顶栏、侧边栏、输入框、统计行、轨迹视图都成了磨砂玻璃片。玻璃模糊度、磨砂度、背景（流体或自定义壁纸，壁纸还能单独调模糊和磨砂）全都能在设置卡片里自由调节。关掉开关",
+      "topics": [
+        "deepseek-harness",
+        "deepseek-harness-plugin",
+        "dsh",
+        "dsh-plugin",
+        "theme"
+      ]
+    },
+    {
+      "full_name": "linhay/harmony-next.skills",
+      "stars": 332,
+      "pushed": "2026-08-18T08:05:29Z",
+      "desc": "🚀 Expert guidance for HarmonyOS NEXT (API 12+) development. Covers IDE operations, performance tuning, architecture (HA",
+      "topics": [
+        "arkts",
+        "automation-testing",
+        "deveco-studio",
+        "dsh-plugin",
+        "harmonyos",
+        "harmonyos-next",
+        "openharmony",
+        "performance-tuning"
+      ]
+    },
+    {
+      "full_name": "Minara-AI/minara-skills",
+      "stars": 331,
+      "pushed": "2026-08-04T06:34:49Z",
+      "desc": "The skills for trading, to make your agent earn for you.",
+      "topics": [
+        "agent-skills",
+        "codex",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "text2future/flowix",
+      "stars": 329,
+      "pushed": "2026-08-19T17:44:52Z",
+      "desc": "Notes for you, Memory for your agents. / 内置 Deepseek harness Agent / 适用 办公 & 写作 & Coding",
+      "topics": [
+        "agent-memory",
+        "claude-code",
+        "codex-cli",
+        "desktop",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugin-desktop",
+        "hermes-agent",
+        "markdown-editor",
+        "memory-system",
+        "note-taking",
+        "open-code"
+      ]
+    },
+    {
+      "full_name": "alaliqing/claude-paper",
+      "stars": 322,
+      "pushed": "2026-08-14T09:09:33Z",
+      "desc": "📖 Cross-agent research paper toolkit for Claude Code, Codex, OpenCode, and DeepSeek Harness—quick summaries, deep study",
+      "topics": [
+        "academic-tools",
+        "agent-skills",
+        "claude-code",
+        "code-generation",
+        "codex",
+        "deepseek-harness",
+        "dsh-plugin",
+        "learning-management",
+        "npm-package",
+        "opencode",
+        "pdf-parser",
+        "research-papers",
+        "vue",
+        "web-viewer"
+      ]
+    },
+    {
+      "full_name": "nutshellai-tech/mobius",
+      "stars": 285,
+      "pushed": "2026-08-20T04:45:31Z",
+      "desc": "The first self-evolving open-source Agent OS, connecting your team, AI agents, devices, and compute",
+      "topics": [
+        "dsh-plugin",
+        "dsh-plugins"
+      ]
+    },
+    {
+      "full_name": "shaobeichen/dsh-pocket",
+      "stars": 268,
+      "pushed": "2026-08-20T13:40:16Z",
+      "desc": "把 DeepSeek Harness 装进你的口袋：电脑上跑 dsh web，手机扫码即同步访问（局域网 + 公网，实时同屏）",
+      "topics": [
+        "deepseek",
+        "deepseek-harness",
+        "deepseek-harness-plugin",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugin-market",
+        "dsh-plugins",
+        "mobile",
+        "qr",
+        "remote",
+        "tunnel"
+      ]
+    },
+    {
+      "full_name": "omdsh-dev/dsh-genui",
+      "stars": 263,
+      "pushed": "2026-08-20T10:59:48Z",
+      "desc": "GenUI for DeepSeek Harness: interactive UI components rendered inline in assistant replies via the dsh-ui fence — layout",
+      "topics": [
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "zhoushoujianwork/easyeda-agent",
+      "stars": 258,
+      "pushed": "2026-08-20T11:05:33Z",
+      "desc": "嘉立创EDA专业版(EasyEDA Pro)自动化：给 AI harness 装上画板的「手」—— 一套 typed 原理图/PCB 动作，CLI / Agent Skill / stdio MCP 三形态融合接入。承接嘉立创「不以卖板赚钱",
+      "topics": [
+        "agent-skill",
+        "ai-agent",
+        "claude-code",
+        "dsh-plugin",
+        "easyeda",
+        "eda",
+        "electronics",
+        "golang",
+        "hardware-design",
+        "jlceda",
+        "lceda",
+        "mcp",
+        "mcp-server",
+        "pcb",
+        "pcb-design",
+        "schematic"
+      ]
+    },
+    {
+      "full_name": "bruc3van/awesome-dsh-plugin",
+      "stars": 257,
+      "pushed": "2026-08-20T06:27:02Z",
+      "desc": "用 30 秒为你的 DeepSeek Harness找到合适的插件。 仓库由脚本每天自动抓取，再经人工逐个核实——真插件进目录，蹭热度的进黑名单，每条剔除理由公开可查。并告诉你每个插件适合谁、从哪里开始。",
+      "topics": [
+        "awesome-list",
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin"
+      ]
+    },
+    {
+      "full_name": "hust-open-atom-club/oh-dsh",
+      "stars": 255,
+      "pushed": "2026-08-20T11:53:01Z",
+      "desc": " 一套 DSH runtime，Desktop、Web 与 TUI 三种开发体验。",
+      "topics": [
+        "ai-agent",
+        "cordis",
+        "dsh",
+        "dsh-plugin",
+        "dsh-plugins"
+      ]
+    },
+    {
+      "full_name": "vlln/whale-girl",
+      "stars": 252,
+      "pushed": "2026-08-19T21:18:20Z",
+      "desc": "DSH Web GUI 桌面宠物插件（QQ 宠物形态）：右下角悬浮、可拖拽/投喂/玩耍的积累型伙伴。",
+      "topics": [
+        "deepseek-harness",
+        "dsh",
+        "dsh-plugin",
+        "dsh-repository-plugin",
+        "pet"
+      ]
+    },
+    {
+      "full_name": "SepineTam/mcp-for-stata",
+      "stars": 247,
+      "pushed": "2026-08-14T07:13:54Z",
+      "desc": "A MCP server for Stata to integrate Stata into your agent. ",
+      "topics": [
+        "claude-code",
+        "claude-code-plugin",
+        "claude-code-skill",
+        "codex",
+        "codex-plugin",
+        "dsh-plugin",
+        "dsh-plugins",
+        "econometrics",
+        "empirical",
+        "empirical-research",
+        "llm",
+        "mcp",
+        "social-science",
+        "social-science-research",
+        "stata",
+        "stata-mcp",
+        "statistical-analysis"
+      ]
+    }
+  ]
+}
