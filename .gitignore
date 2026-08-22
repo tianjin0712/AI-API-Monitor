@@ -66,6 +66,8 @@ secrets/
 # Session/agent metadata
 .reasonix/
 scripts/
+!/scripts/
+!/scripts/**
 backups/real-app-data-20260817-164834/ai-api-monitor.db
 backups/
 Markdown/API/Acceptance_Test_Checklist.md
