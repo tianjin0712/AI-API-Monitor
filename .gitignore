@@ -31,6 +31,8 @@ src-tauri/gen/schemas
 
 # Local package-manager caches and test/build output
 .pnpm-store/
+.npm-cache/
+.tooling/
 .dsh-*
 coverage/
 playwright-report/
