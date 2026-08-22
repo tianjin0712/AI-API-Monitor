@@ -2,7 +2,7 @@
 
 ## 面向用户的下载内容
 
-- **安装版（推荐）**：`AI API Monitor_<version>_x64-setup.exe`。双击后按向导安装；采用当前用户安装，不需要管理员权限，也不会显示开发终端。
+- **安装版（推荐）**：`AI API Monitor_x64-setup_<version>.exe`（版本名位于文件名末尾）。双击后按向导安装；采用当前用户安装，不需要管理员权限，也不会显示开发终端。
 - **便携版**：`AI-API-Monitor-portable.zip`。解压后双击 `AI API Monitor.exe`；首次运行仍需要 Windows WebView2 Runtime（Windows 11 通常已内置）。便携版的数据仍按 Windows 用户保存在应用数据目录，不会写入解压目录。
 
 两种版本都已经内置应用 EXE、前端页面、JavaScript 依赖、Rust 依赖、SQLite 引擎、字体、主题图片和 GIF。用户不需要安装 Node.js、pnpm、Rust、Cargo、Python、Git 或项目源码。
@@ -45,7 +45,7 @@ git push origin HEAD
 git push origin vX.Y.Z
 ```
 
-版本号必须在 release commit 前同步。`pnpm tauri build` 只校验 manifest 一致性并构建，绝不会根据 Tag 回写版本。Tag 推送后 GitHub Actions 会在该 Tag 指向的提交上再次验证 `Tag == manifest`，再构建 Windows bundle；工作流不修改任何版本文件。
+版本号以 Git Tag 为来源。`pnpm package:windows` 在打包时自动读取当前 Git Tag 派生版本（HEAD 在 tag 上取精确 tag，非 tag 提交取最近可达 tag，无 tag 时回退到 package.json），注入 manifest 后构建 Windows bundle 并把产物重命名为「版本名在末尾」的文件名；文件名版本与应用内部版本同源一致。Tag 推送后 GitHub Actions 仍会在该 Tag 指向的提交上先验证 `Tag == manifest`，再执行 `pnpm package:windows` 构建 bundle。
 
 不要在旧 manifest 上打 Tag，也不要在打 Tag 后补改版本。若 `pnpm release:verify` 失败，应修复或重新提交 release commit；不要移动或重写已发布 Tag。
 
@@ -53,7 +53,7 @@ git push origin vX.Y.Z
 
 ```text
 release/
-├─ AI API Monitor_<version>_x64-setup.exe
+├─ AI API Monitor_x64-setup_<version>.exe
 ├─ AI-API-Monitor-portable.zip
 └─ AI-API-Monitor-portable/
    ├─ AI API Monitor.exe
