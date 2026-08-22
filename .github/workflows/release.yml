@@ -47,8 +47,8 @@ jobs:
       - name: Build frontend
         run: pnpm build
 
-      - name: Build Tauri bundle without mutating versions
-        run: pnpm tauri build
+      - name: Build Windows bundle (version derived from Git Tag)
+        run: pnpm package:windows
 
       - name: Upload unsigned bundle for release review
         uses: actions/upload-artifact@v4

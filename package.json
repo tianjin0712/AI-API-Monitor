@@ -23,6 +23,7 @@
     "version:sync": "node tools/sync-version.mjs",
     "version:check": "node tools/version-check.mjs",
     "release:verify": "node tools/release-verify.mjs",
+    "package:windows": "node tools/package-windows.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
