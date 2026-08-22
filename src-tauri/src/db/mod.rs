@@ -189,14 +189,26 @@ fn recovery_path(db_path: &Path) -> PathBuf {
 }
 
 fn preserve_corrupt_database(db_path: &Path, recovery_path: &Path) -> rusqlite::Result<()> {
+    // Move the main file first. If a sidecar move fails, restore everything we
+    // already moved and abort recovery; a replacement database must never be
+    // created from a partially preserved WAL set.
+    std::fs::rename(db_path, recovery_path).map_err(io_error)?;
+    let mut moved_sidecars = Vec::new();
     for suffix in ["-wal", "-shm"] {
         let sidecar = PathBuf::from(format!("{}{}", db_path.display(), suffix));
         if sidecar.exists() {
-            std::fs::rename(&sidecar, format!("{}{}", recovery_path.display(), suffix))
-                .map_err(io_error)?;
+            let recovered_sidecar = PathBuf::from(format!("{}{}", recovery_path.display(), suffix));
+            if let Err(error) = std::fs::rename(&sidecar, &recovered_sidecar) {
+                for (original, preserved) in moved_sidecars.iter().rev() {
+                    let _ = std::fs::rename(preserved, original);
+                }
+                let _ = std::fs::rename(recovery_path, db_path);
+                return Err(io_error(error));
+            }
+            moved_sidecars.push((sidecar, recovered_sidecar));
         }
     }
-    std::fs::rename(db_path, recovery_path).map_err(io_error)
+    Ok(())
 }
 
 fn create_snapshot(db_path: &Path, version: i64) -> rusqlite::Result<()> {

@@ -643,7 +643,7 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
             continue; // 已是 UUID 格式（key_<uuid>）或未知格式
         }
         let result = (|| -> Result<(), AppError> {
-            let api_key = SecureStorage::get_api_key(&key_ref)?;
+            let api_key = SecureStorage::get_legacy_api_key(&key_ref)?;
             let key_id = SecureStorage::gen_key_id();
             let new_ref = SecureStorage::save_api_key(&key_id, &api_key)?;
             if let Err(error) = db.with_conn(|conn| {
@@ -655,7 +655,7 @@ pub fn migrate_legacy_credentials(db: &Db) -> Result<MigrateResult, AppError> {
                 let _ = SecureStorage::delete_api_key(&new_ref);
                 return Err(AppError::Db(error));
             }
-            if let Err(error) = SecureStorage::delete_api_key(&key_ref) {
+            if let Err(error) = SecureStorage::delete_legacy_api_key(&key_ref) {
                 crate::security::safe_log("migration", format!("credential UUID migrated but old credential cleanup failed for provider id={id}: {error}"));
             }
             crate::security::safe_log(

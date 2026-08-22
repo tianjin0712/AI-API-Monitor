@@ -46,9 +46,27 @@ impl SecureStorage {
         Ok(Zeroizing::new(entry.get_password()?))
     }
 
+    /// Read a pre-UUID credential during the one-time migration only.
+    /// Keeping this separate from `get_api_key` prevents normal runtime code
+    /// from accepting predictable legacy account names.
+    pub fn get_legacy_api_key(key_ref: &str) -> Result<Zeroizing<String>, StorageError> {
+        let account = parse_legacy_ref(key_ref)?;
+        let entry = Entry::new(KEYRING_SERVICE, account)?;
+        Ok(Zeroizing::new(entry.get_password()?))
+    }
+
     /// 删除 API Key（按 key_ref）。
     pub fn delete_api_key(key_ref: &str) -> Result<(), StorageError> {
         let (_service, account) = parse_ref(key_ref)?;
+        let entry = Entry::new(KEYRING_SERVICE, account)?;
+        entry.delete_credential()?;
+        Ok(())
+    }
+
+    /// Delete a pre-UUID credential after its replacement has been saved and
+    /// the database transaction has committed.
+    pub fn delete_legacy_api_key(key_ref: &str) -> Result<(), StorageError> {
+        let account = parse_legacy_ref(key_ref)?;
         let entry = Entry::new(KEYRING_SERVICE, account)?;
         entry.delete_credential()?;
         Ok(())
@@ -103,6 +121,19 @@ fn parse_ref(key_ref: &str) -> Result<(&str, &str), StorageError> {
     Ok(parsed)
 }
 
+fn parse_legacy_ref(key_ref: &str) -> Result<&str, StorageError> {
+    let (service, account) = key_ref
+        .split_once(':')
+        .filter(|(service, account)| !service.is_empty() && !account.is_empty())
+        .ok_or_else(|| StorageError::InvalidRef("malformed legacy credential reference".into()))?;
+    if service != KEYRING_SERVICE || !account.starts_with("provider_") {
+        return Err(StorageError::InvalidRef(
+            "untrusted legacy credential reference".into(),
+        ));
+    }
+    Ok(account)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +163,13 @@ mod tests {
         assert!(parse_ref("no-colon").is_err());
         assert!(parse_ref("service:").is_err());
         assert!(parse_ref(":account").is_err());
+    }
+
+    #[test]
+    fn legacy_ref_is_only_accepted_by_the_migration_parser() {
+        let legacy = "com.aiapimonitor.desktop:provider_test";
+        assert!(parse_ref(legacy).is_err());
+        assert_eq!(parse_legacy_ref(legacy).unwrap(), "provider_test");
+        assert!(parse_legacy_ref("com.aiapimonitor.desktop:key_abc").is_err());
     }
 }
