@@ -1,6 +1,6 @@
 [package]
 name = "ai-api-monitor"
-version = "1.0.6"
+version = "1.0.7"
 description = "AI API Monitor - realtime AI API token/balance/cost monitoring desktop app"
 authors = ["AI API Monitor"]
 edition = "2021"
