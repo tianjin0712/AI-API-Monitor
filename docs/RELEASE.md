@@ -47,6 +47,11 @@ git push origin vX.Y.Z
 
 版本号以 Git Tag 为来源。`pnpm package:windows` 在打包时自动读取当前 Git Tag 派生版本（HEAD 在 tag 上取精确 tag，非 tag 提交取最近可达 tag，无 tag 时回退到 package.json），注入 manifest 后构建 Windows bundle 并把产物重命名为「版本名在末尾」的文件名；文件名版本与应用内部版本同源一致。Tag 推送后 GitHub Actions 仍会在该 Tag 指向的提交上先验证 `Tag == manifest`，再执行 `pnpm package:windows` 构建 bundle。
 
+除上述手动流程外，仓库还提供两个一键打包脚本，均以 Git Tag 为版本来源、注入 manifest 并完成构建：
+
+- **Windows**：`scripts/Build-Release.ps1`，解析版本、执行 `pnpm check`、构建安装包与便携版（构建失败自动重试），产物输出到 `release/`。
+- **macOS**：`scripts/Build-Release.sh`，构建 `.app` 与 `.dmg`（默认输出到 `~/release`），产物文件名末尾追加版本号；macOS 无法交叉编译 Windows 产物。
+
 不要在旧 manifest 上打 Tag，也不要在打 Tag 后补改版本。若 `pnpm release:verify` 失败，应修复或重新提交 release commit；不要移动或重写已发布 Tag。
 
 发布目录：

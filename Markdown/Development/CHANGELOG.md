@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-23
+
+- 新增 macOS 发布打包脚本 `scripts/Build-Release.sh`：以 Git Tag 为版本来源（精确 Tag > 最近可达 Tag > package.json 回退），注入 manifest 后构建 `.app` 与 `.dmg`，产物文件名末尾追加版本号，与 Windows 端等价。
+- Windows 发布打包脚本 `scripts/Build-Release.ps1` 纳入版本管理并完善：根据 Git Tag 派生版本、注入 manifest、构建失败自动重试，并统一安装版与便携版产物命名。
+- manifest 版本升至 `1.0.7`（尚未创建对应 Git Tag）。
+
+## 2026-08-22
+
+- Windows 打包以 Git Tag 作为版本来源：新增 `tools/package-windows.mjs`，按「精确 Tag > 最近可达 Tag > package.json 回退」派生版本并注入 manifest，保证产物文件名与应用内部版本同源一致。
+- 加固数据库损坏恢复：恢复过程 sidecar 文件移动失败时支持原子回滚，避免从部分保留的 WAL 重建；legacy 凭据迁移改用专用解析方法，防止接受可预测的旧账号名。
+
+## 2026-08-20
+
+- 强化发布流程：新增统一版本字段模块，`pnpm version:sync` 必须显式传入目标版本；新增 `pnpm version:check` 与 `pnpm release:verify`，构建前改为只读版本检查，避免 Tag 构建改写源码。
+- 新增 GitHub Release 工作流：由 `v*` Tag 触发，构建前再次校验 Tag 与三份 manifest 版本一致。
+- CI 质量门禁限定为主分支提交与 Pull Request 触发；Tag 推送改由 Release 工作流负责，避免历史 Tag 重新推送时产生无意义失败。
+
 ## 2026-08-19
 
 - 新增通用自定义 API Provider（`custom`）：可配置请求方法（GET/POST）、URL、Query、Headers、认证方式（Bearer / API Key Header / Basic Auth / 无认证 / 自定义 Header）、JSON Body、响应字段点路径映射（remaining/total/used/resetTime）与单位（Token/次数/金额/自定义）。

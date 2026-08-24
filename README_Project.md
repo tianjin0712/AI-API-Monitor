@@ -2,7 +2,7 @@
 
 ## 项目介绍
 
-AI API Monitor 是一个 Tauri 2 桌面应用，用统一 Dashboard 展示多个 AI 平台的余额、Token、费用、历史趋势和预计耗尽时间。当前版本为 `0.1.0`，功能阶段标识为 `V0.5-alpha`。
+AI API Monitor 是一个 Tauri 2 桌面应用，用统一 Dashboard 展示多个 AI 平台的余额、Token、费用、历史趋势和预计耗尽时间。最近发布基线 Tag 为 `v1.0.6`（manifest 版本已升至 `1.0.7`，尚未打 Tag），产品成熟度按 V1.0-alpha 管理。
 
 当前已注册平台：Claude、Codex、DeepSeek、OpenAI、OpenRouter、SiliconFlow，以及通用自定义 API（`custom`）。Gemini 代码仅保留说明，未对用户开放。
 
@@ -114,7 +114,7 @@ cargo test
 | `src-tauri/src/db/mod.rs` | SQLite schema 与迁移 |
 | `src-tauri/src/storage.rs` | 系统凭据库 |
 | `src-tauri/src/window_mode.rs` | Full/Mini/Ball 与几何持久化 |
-| [`TEST_CASES.md`](./Markdown/Development/TEST_CASES.md) | 50 条手工/集成测试用例 |
+| [`TEST_CASES.md`](./Markdown/Development/TEST_CASES.md) | 62 条手工/集成测试用例 |
 | [`项目索引.md`](./Markdown/Development/项目索引.md) | Markdown 目录说明及完整结构、模块和资源索引 |
 | [`优化建议.md`](./Markdown/TODO/优化建议.md) | 按优先级拆分的改进任务 |
 
@@ -141,6 +141,6 @@ cargo test
 
 ## 后续计划
 
-已完成数据库启动错误传播、趋势刷新联动、预测降级提示、OpenRouter URL 归一化、工具链固定、前端单元测试基线与 CI。下一阶段优先建设 Provider HTTP mock 合约测试、可恢复的数据库故障界面、诊断日志与模块拆分。长期目标是稳定 Provider 接口、显式能力模型、完整 DIY UI 和数据备份/恢复。
+已完成数据库启动错误传播、趋势刷新联动、预测降级提示、OpenRouter URL 归一化、工具链固定、前端单元测试基线、CI、Provider HTTP mock 合约测试与数据库损坏安全恢复。下一阶段优先建设脱敏诊断日志导出、面向用户的数据库备份/恢复入口与模块拆分。长期目标是稳定 Provider 接口、显式能力模型、完整 DIY UI 和数据备份/恢复。
 
 详细任务见 [`优化建议.md`](./Markdown/TODO/优化建议.md)。

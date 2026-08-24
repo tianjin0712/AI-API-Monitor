@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.6`；当前 `origin/master` 另有 4 个未打 Tag 的自定义 API Provider 提交，因此不能将 `v1.0.6` 视为当前开发主线版本。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.6`；`master` 在其上另有 22 个未打 Tag 的提交（通用自定义 API Provider、发布流程与 Windows/macOS 打包脚本、数据库恢复加固），manifest 版本已升至 `1.0.7` 但尚未创建对应 Tag，因此不能将 `v1.0.6` 视为当前开发主线版本。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
 
 ## 项目简介
 
@@ -87,6 +87,22 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - 更完整的日报/周报/月报、成本预测和跨设备配置同步。
 
 ## Changelog
+
+### 2026-08-23
+
+- 新增 macOS 发布打包脚本 `scripts/Build-Release.sh`，与 Windows 端一致以 Git Tag 派生版本并注入 manifest，产出 `.app` 与 `.dmg`。
+- Windows 发布脚本 `scripts/Build-Release.ps1` 纳入版本管理并完善版本派生、构建重试与产物重命名。
+- manifest 版本升至 `1.0.7`（尚未创建对应 Git Tag）。
+
+### 2026-08-22
+
+- Windows 打包以 Git Tag 为版本来源（`tools/package-windows.mjs`），保证产物文件名与应用内部版本同源。
+- 加固数据库损坏恢复的 sidecar 回滚与 legacy 凭据迁移解析。
+
+### 2026-08-20
+
+- 强化发布流程：新增 `pnpm version:check` 与 `pnpm release:verify`，强制 Tag、发布提交与三份 manifest 版本一致；构建前只做只读版本检查。
+- 新增 GitHub Release 工作流（`v*` Tag 触发）；CI 质量门禁限定为主分支提交与 Pull Request。
 
 ### 2026-08-19
 
