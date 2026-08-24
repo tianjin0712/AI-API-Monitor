@@ -4,7 +4,7 @@
 
 - 新增 macOS 发布打包脚本 `scripts/Build-Release.sh`：以 Git Tag 为版本来源（精确 Tag > 最近可达 Tag > package.json 回退），注入 manifest 后构建 `.app` 与 `.dmg`，产物文件名末尾追加版本号，与 Windows 端等价。
 - Windows 发布打包脚本 `scripts/Build-Release.ps1` 纳入版本管理并完善：根据 Git Tag 派生版本、注入 manifest、构建失败自动重试，并统一安装版与便携版产物命名。
-- manifest 版本升至 `1.0.7`（尚未创建对应 Git Tag）。
+- manifest 版本升至 `1.0.7`，并已创建对应 Git Tag `v1.0.7`。
 
 ## 2026-08-22
 

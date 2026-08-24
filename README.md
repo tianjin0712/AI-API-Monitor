@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.6`；`master` 在其上另有 22 个未打 Tag 的提交（通用自定义 API Provider、发布流程与 Windows/macOS 打包脚本、数据库恢复加固），manifest 版本已升至 `1.0.7` 但尚未创建对应 Tag，因此不能将 `v1.0.6` 视为当前开发主线版本。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.7`（通用自定义 API Provider、发布流程与 Windows/macOS 打包脚本、数据库恢复加固），Tag 指向 `chore: release v1.0.7` 发布提交，manifest 版本一致。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
 
 ## 项目简介
 
@@ -9,7 +9,7 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - **技术栈**：Tauri 2、Rust 2021、React 19、TypeScript、Vite 7、Tailwind CSS 4、SQLite（WAL/迁移）、reqwest、tokio、keyring。
 - **开发环境**：Node.js 20.19+（或 22.12+）、pnpm 11、Rust stable、对应平台的 Tauri WebView/构建工具。
 - **当前状态**：Windows 安装包已在实际安装环境验证，安装后核心日常功能可正常使用；数据库恢复与迁移安全仍需完整人工复验。macOS 构建、Keychain、通知、窗口行为和签名发布尚未在本机完成验收。
-- **发布口径**：发布前必须保证 Git Tag、`package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本一致；下一次发布应先合并当前未打 Tag 的主线提交，再按实际发布版本同步受控 manifest。
+- **发布口径**：发布前必须保证 Git Tag、`package.json`、`Cargo.toml` 和 `tauri.conf.json` 的版本一致；下一次发布按 `docs/RELEASE.md` 流程同步受控 manifest、创建 release commit 并打 annotated Tag。
 
 ## Windows 安装验收
 
@@ -92,7 +92,7 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 
 - 新增 macOS 发布打包脚本 `scripts/Build-Release.sh`，与 Windows 端一致以 Git Tag 派生版本并注入 manifest，产出 `.app` 与 `.dmg`。
 - Windows 发布脚本 `scripts/Build-Release.ps1` 纳入版本管理并完善版本派生、构建重试与产物重命名。
-- manifest 版本升至 `1.0.7`（尚未创建对应 Git Tag）。
+- manifest 版本升至 `1.0.7`，并已创建对应 Git Tag `v1.0.7`。
 
 ### 2026-08-22
 

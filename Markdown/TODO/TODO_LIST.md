@@ -1,7 +1,7 @@
 # AI API Monitor Todo List
 
 > 整理日期：2026-08-14；状态复核：2026-08-20
-> 当前版本：最近发布基线 Tag 为 `v1.0.6`；`master` 在其上另有 22 个未打 Tag 的提交（通用自定义 API Provider、发布流程与打包脚本、数据库恢复加固），manifest 版本已升至 `1.0.7` 但尚未打 Tag，当前开发主线版本待下一次发布确定。产品成熟度仍为 **V1.0-alpha**。发布前须确认 Tag、三个受控 manifest 和安装包版本一致。
+> 当前版本：最近发布基线 Tag 为 `v1.0.7`（通用自定义 API Provider、发布流程与打包脚本、数据库恢复加固），Tag 指向 `chore: release v1.0.7` 发布提交，manifest 版本一致。产品成熟度仍为 **V1.0-alpha**。发布前须确认 Tag、受控 manifest 和安装包版本一致。
 > 审计日期：2026-08-14；本清单仅在有新的提交或验收记录时更新，历史质量门禁不能替代当前 HEAD 验证。
 > 平台优先级：**优先在 Windows 台式机（i5-13600KF + RTX 4070）上运行与优化，验证通过后再复刻到 macOS 端**。CI（`.github/workflows/quality.yml`）即跑在 `windows-latest`，与主平台一致；macOS 本地跑通是次一级的交叉验证。  
 > 说明：本清单以当前代码、测试结果、Git 历史和 Markdown 文档为准；仅有文档或历史对话声明的任务不会直接勾选。

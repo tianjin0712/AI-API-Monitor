@@ -2,7 +2,7 @@
 
 ## 项目介绍
 
-AI API Monitor 是一个 Tauri 2 桌面应用，用统一 Dashboard 展示多个 AI 平台的余额、Token、费用、历史趋势和预计耗尽时间。最近发布基线 Tag 为 `v1.0.6`（manifest 版本已升至 `1.0.7`，尚未打 Tag），产品成熟度按 V1.0-alpha 管理。
+AI API Monitor 是一个 Tauri 2 桌面应用，用统一 Dashboard 展示多个 AI 平台的余额、Token、费用、历史趋势和预计耗尽时间。最近发布基线 Tag 为 `v1.0.7`（Tag 指向 `chore: release v1.0.7` 发布提交，manifest 版本一致），产品成熟度按 V1.0-alpha 管理。
 
 当前已注册平台：Claude、Codex、DeepSeek、OpenAI、OpenRouter、SiliconFlow，以及通用自定义 API（`custom`）。Gemini 代码仅保留说明，未对用户开放。
 
