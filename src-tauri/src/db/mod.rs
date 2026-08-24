@@ -17,9 +17,40 @@ pub struct Db {
     pub(crate) recovery_notice: Option<String>,
 }
 
+/// 数据库初始化失败错误：保留底层 rusqlite 错误作为 source，同时标注失败步骤，
+/// 使启动期日志能够区分「打开连接 / busy_timeout / 权限 / WAL / 外键 / schema 检查 / 快照 / 迁移」等阶段。
+#[derive(Debug)]
+pub(crate) struct InitError {
+    step: &'static str,
+    source: SqlError,
+}
+
+impl InitError {
+    fn at(step: &'static str, source: SqlError) -> Self {
+        Self { step, source }
+    }
+
+    /// 底层 SQLite 错误，供 is_busy / is_corruption 分类判断。
+    fn sql_error(&self) -> &SqlError {
+        &self.source
+    }
+}
+
+impl std::fmt::Display for InitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.step, self.source)
+    }
+}
+
+impl std::error::Error for InitError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
 impl Db {
     /// 打开（必要时创建）数据库文件并执行迁移。
-    pub fn open(db_path: &Path) -> rusqlite::Result<Self> {
+    pub fn open(db_path: &Path) -> Result<Self, InitError> {
         let mut last_error = None;
         for attempt in 0..OPEN_RETRIES {
             match open_once(db_path) {
@@ -29,7 +60,7 @@ impl Db {
                         recovery_notice: None,
                     });
                 }
-                Err(error) if is_busy(&error) && attempt + 1 < OPEN_RETRIES => {
+                Err(error) if is_busy(error.sql_error()) && attempt + 1 < OPEN_RETRIES => {
                     crate::security::safe_log(
                         "database_retry",
                         format!("database locked, retry {}/{}", attempt + 1, OPEN_RETRIES),
@@ -48,14 +79,17 @@ impl Db {
         crate::security::safe_log(
             "database_open_failed",
             format!(
-                "database open failed; class={}; error={error}",
-                database_error_class(&error)
+                "database open failed; path={}; step={}; class={}; error={}",
+                db_path.display(),
+                error.step,
+                database_error_class(error.sql_error()),
+                error.sql_error()
             ),
         );
-        if is_busy(&error) {
+        if is_busy(error.sql_error()) {
             crate::security::safe_log("database_locked", "database remained locked after retries");
         }
-        if !db_path.exists() || is_busy(&error) || !is_corruption(&error) {
+        if !db_path.exists() || is_busy(error.sql_error()) || !is_corruption(error.sql_error()) {
             return Err(error);
         }
 
@@ -77,14 +111,18 @@ impl Db {
                 "database_recovery_failed",
                 format!("could not preserve corrupt database; error={error}"),
             );
-            return Err(error);
+            return Err(InitError::at("保留损坏数据库副本", error));
         }
         let conn = match open_fresh(db_path) {
             Ok(conn) => conn,
             Err(error) => {
                 crate::security::safe_log(
                     "database_recovery_failed",
-                    format!("could not initialize clean database; error={error}"),
+                    format!(
+                        "could not initialize clean database; step={}; error={}",
+                        error.step,
+                        error.sql_error()
+                    ),
                 );
                 return Err(error);
             }
@@ -116,31 +154,44 @@ impl Db {
     }
 }
 
-fn open_once(db_path: &Path) -> rusqlite::Result<Connection> {
-    let conn = Connection::open(db_path)?;
-    conn.busy_timeout(Duration::from_secs(5))?;
-    crate::platform_security::harden_private_path(db_path, false).map_err(io_error)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+fn open_once(db_path: &Path) -> Result<Connection, InitError> {
+    let conn = Connection::open(db_path).map_err(|error| InitError::at("打开数据库连接", error))?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|error| InitError::at("设置 busy_timeout", error))?;
+    crate::platform_security::harden_private_path(db_path, false)
+        .map_err(io_error)
+        .map_err(|error| InitError::at("加固数据库文件权限", error))?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|error| InitError::at("设置 WAL 日志模式", error))?;
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .map_err(|error| InitError::at("启用外键约束", error))?;
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|error| InitError::at("读取 schema 版本 (PRAGMA user_version)", error))?;
     if version < SCHEMA_VERSION {
         // Flush as much WAL state as possible before copying the snapshot;
         // the sidecar files are copied as well when another process still
         // keeps the database in WAL mode.
         let _ = conn.execute_batch("PRAGMA wal_checkpoint(PASSIVE)");
-        create_snapshot(db_path, version)?;
+        create_snapshot(db_path, version)
+            .map_err(|error| InitError::at("创建迁移前快照", error))?;
     }
-    migrate(&conn)?;
+    migrate(&conn).map_err(|error| InitError::at("执行数据库迁移", error))?;
     Ok(conn)
 }
 
-fn open_fresh(db_path: &Path) -> rusqlite::Result<Connection> {
-    let conn = Connection::open(db_path)?;
-    conn.busy_timeout(Duration::from_secs(5))?;
-    crate::platform_security::harden_private_path(db_path, false).map_err(io_error)?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    migrate(&conn)?;
+fn open_fresh(db_path: &Path) -> Result<Connection, InitError> {
+    let conn = Connection::open(db_path).map_err(|error| InitError::at("打开数据库连接", error))?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|error| InitError::at("设置 busy_timeout", error))?;
+    crate::platform_security::harden_private_path(db_path, false)
+        .map_err(io_error)
+        .map_err(|error| InitError::at("加固数据库文件权限", error))?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(|error| InitError::at("设置 WAL 日志模式", error))?;
+    conn.pragma_update(None, "foreign_keys", "ON")
+        .map_err(|error| InitError::at("启用外键约束", error))?;
+    migrate(&conn).map_err(|error| InitError::at("执行数据库迁移", error))?;
     Ok(conn)
 }
 
@@ -644,5 +695,28 @@ mod tests {
         assert!(is_busy(&error));
         assert!(!is_corruption(&error));
         assert_eq!(database_error_class(&error), "locked_or_busy");
+    }
+
+    #[test]
+    fn init_error_display_includes_step_and_source() {
+        let error = SqlError::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: ErrorCode::NotADatabase,
+                extended_code: rusqlite::ffi::SQLITE_NOTADB,
+            },
+            Some("file is not a database".into()),
+        );
+        let init = InitError::at("读取 schema 版本 (PRAGMA user_version)", error);
+        let text = init.to_string();
+        assert!(
+            text.contains("读取 schema 版本"),
+            "缺少失败步骤上下文: {text}"
+        );
+        assert!(
+            text.contains("file is not a database"),
+            "缺少失败原因: {text}"
+        );
+        // source 链保留，供上层 is_corruption 分类判断
+        assert!(is_corruption(init.sql_error()));
     }
 }
