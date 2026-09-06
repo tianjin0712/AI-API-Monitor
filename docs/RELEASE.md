@@ -1,4 +1,10 @@
-# AI API Monitor Windows 发布说明
+# AI API Monitor Windows 发布说明 / Windows Release Guide
+
+## v1.0.8 发布摘要 / Release Summary
+
+中文：本版本修复 Windows 发布版启动诊断与 Codex 外部运行时的控制台窗口问题，并完善 GitHub Actions 自动创建 Release、上传 NSIS 安装包及版本不可变校验。发布版仍会在真正启动失败时显示明确错误，并将脱敏日志写入用户数据目录。
+
+English: This release fixes Windows console-window behavior when launching the Codex runtime and improves production startup diagnostics. GitHub Actions now validates immutable release metadata, builds the NSIS installer, creates the GitHub Release, and uploads the installer. Genuine startup failures still show a clear error and write a redacted diagnostic log to the user data directory.
 
 ## 面向用户的下载内容
 

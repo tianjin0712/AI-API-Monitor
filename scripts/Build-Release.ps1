@@ -1,11 +1,14 @@
 ﻿[CmdletBinding()]
 param(
     [switch]$SkipChecks,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot "..\release")
+    [string]$OutputDirectory
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $OutputDirectory = Join-Path $projectRoot "release"
+}
 $outputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 
 # 产品名与架构标记（与 tools/package-windows.mjs、docs/RELEASE.md 保持一致）。

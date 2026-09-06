@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows:
@@ -50,9 +50,23 @@ jobs:
       - name: Build Windows bundle (version derived from Git Tag)
         run: pnpm package:windows
 
-      - name: Upload unsigned bundle for release review
+      - name: Ensure release build did not mutate manifests
+        shell: pwsh
+        run: |
+          $diff = git diff --exit-code -- package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          if ($LASTEXITCODE -ne 0) { throw "Release build mutated version manifests; fix the release commit instead of rewriting versions in CI." }
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+
+      - name: Upload Windows bundle for workflow retention
         uses: actions/upload-artifact@v4
         with:
           name: ai-api-monitor-${{ github.ref_name }}-windows
-          path: src-tauri/target/release/bundle/**
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error

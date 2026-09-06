@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.7`（通用自定义 API Provider、发布流程与 Windows/macOS 打包脚本、数据库恢复加固），Tag 指向 `chore: release v1.0.7` 发布提交，manifest 版本一致。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.8`（Windows 发布版诊断、Codex 子进程窗口与自动发布流程修复），Tag 指向 `chore: release v1.0.8` 发布提交，manifest 版本一致。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
 
 ## 项目简介
 
