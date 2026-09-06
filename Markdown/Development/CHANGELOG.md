@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.0.8 - 2026-09-06
+
+- 中文：修复 Windows 发布版启动 Codex `.cmd`/`.bat` 运行时时可能出现的控制台窗口；统一使用无窗口子进程启动方式。
+- English: Fixed console windows that could appear when the Windows release build launched Codex `.cmd`/`.bat` runtimes; all runtime launch paths now use the windowless process configuration.
+- 中文：修复 Release Workflow 权限与发布步骤，Tag 校验通过后自动构建 NSIS 安装包并创建 GitHub Release。
+- English: Fixed Release Workflow permissions and publishing steps so a validated tag builds the NSIS installer and creates a GitHub Release automatically.
+- 中文：增加构建后 manifest 不可变检查，防止 CI 在 Tag 创建后改写版本。
+- English: Added a post-build immutable-manifest check to prevent CI from rewriting versions after tagging.
+
 ## 2026-08-23
 
 - 新增 macOS 发布打包脚本 `scripts/Build-Release.sh`：以 Git Tag 为版本来源（精确 Tag > 最近可达 Tag > package.json 回退），注入 manifest 后构建 `.app` 与 `.dmg`，产物文件名末尾追加版本号，与 Windows 端等价。

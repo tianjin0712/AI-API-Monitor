@@ -16,6 +16,16 @@ use std::process::{Child, Command, Stdio};
 use std::{thread, time::Duration};
 use tauri::Emitter;
 
+fn runtime_command(executable: &std::path::Path) -> Command {
+    #[cfg(target_os = "windows")]
+    if executable.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat")) {
+        let mut command = Command::new("cmd.exe");
+        command.args(["/D", "/S", "/C"]).arg(executable);
+        return command;
+    }
+    Command::new(executable)
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CodexRuntimeStatus {
@@ -87,7 +97,7 @@ fn runtime_source_label(source: RuntimeSource) -> &'static str {
 pub fn runtime_status() -> CodexRuntimeStatus {
     let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
     for runtime in &candidates {
-        let mut command = Command::new(&runtime.executable);
+        let mut command = runtime_command(&runtime.executable);
         command
             .args(["login", "status"])
             .stdin(Stdio::null())
@@ -121,7 +131,7 @@ pub fn start_login() -> Result<(), ProviderError> {
         .into_iter()
         .next()
         .ok_or_else(|| ProviderError::Api("未安装 ChatGPT/Codex Desktop 或 Codex CLI".into()))?;
-    let mut command = Command::new(runtime.executable);
+    let mut command = runtime_command(&runtime.executable);
     command
         .arg("login")
         .stdin(Stdio::null())
@@ -143,7 +153,7 @@ pub fn start_rate_limit_monitor(app: tauri::AppHandle) {
             let candidates = DesktopRuntimeResolver::from_environment().resolve_candidates();
             let mut connected = false;
             for runtime in candidates {
-                let mut command = Command::new(&runtime.executable);
+                let mut command = runtime_command(&runtime.executable);
                 command
                     .arg("app-server")
                     .stdin(Stdio::piped())
@@ -351,7 +361,7 @@ fn apply_account_usage(usage: &mut ProviderUsage, response: &Value) {
 fn fetch_from_runtime(
     runtime: &super::desktop_runtime::ResolvedRuntime,
 ) -> Result<ProviderUsage, ProviderError> {
-    let mut command = Command::new(&runtime.executable);
+    let mut command = runtime_command(&runtime.executable);
     command
         .arg("app-server")
         .stdin(Stdio::piped())
