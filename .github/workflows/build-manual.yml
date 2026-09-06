@@ -1,0 +1,48 @@
+name: Manual Build (Windows)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.21.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.97.1
+          components: clippy,rustfmt
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Build Windows bundle (version derived from Git Tag, falls back to package.json)
+        run: pnpm package:windows
+
+      - name: Upload Windows bundle for workflow retention
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-api-monitor-windows-manual
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
