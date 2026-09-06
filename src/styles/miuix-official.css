@@ -54,6 +54,16 @@ html.has-user-background .mx-card { background: color-mix(in srgb, var(--color-c
   background: var(--control-hover-bg);
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
+.provider-form-grid .password-field-input {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-shadow: none !important;
+}
+.provider-form-grid .password-field-input::placeholder {
+  text-shadow: none !important;
+}
 .provider-form-grid .app-select-chevron {
   display: grid;
   flex: 0 0 20px;

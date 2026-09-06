@@ -64,6 +64,38 @@ export function Dialog({ open, title, children, confirmLabel = "确定", cancelL
   );
 }
 
+export function CloseActionDialog({ open, remember, busy, error, onRememberChange, onChoose, onDismiss }: { open: boolean; remember: boolean; busy: boolean; error: string | null; onRememberChange: (value: boolean) => void; onChoose: (action: "minimize_to_tray" | "quit") => void; onDismiss: () => void }) {
+  const trayRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    trayRef.current?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) onDismiss();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, busy, onDismiss]);
+  if (!open) return null;
+  return createPortal(
+    <div className="mx-dialog-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !busy && onDismiss()}>
+      <section className="mx-dialog" role="dialog" aria-modal="true" aria-labelledby="close-action-dialog-title">
+        <div className="mx-dialog-icon" aria-hidden="true">i</div>
+        <h2 id="close-action-dialog-title">关闭应用</h2>
+        <div className="mx-dialog-content">
+          <p>你希望如何处理这次关闭操作？</p>
+          <div className="mt-3"><Checkbox checked={remember} disabled={busy} onChange={onRememberChange} label="记住我的选择" /></div>
+          {error && <p className="mx-dialog-note text-danger" role="alert">{error}</p>}
+        </div>
+        <div className="mx-dialog-actions">
+          <Button ref={trayRef} type="button" disabled={busy} onClick={() => onChoose("minimize_to_tray")}>缩小到托盘</Button>
+          <Button type="button" variant="primary" disabled={busy} onClick={() => onChoose("quit")}>{busy ? "处理中…" : "关闭软件"}</Button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 export function NavigationBar({ items, selected, onSelect }: { items: Array<{ id: string; label: string; icon: ReactNode }>; selected: string; onSelect: (id: string) => void }) {
   return (
     <nav className="mx-navigation-bar" aria-label="主导航">

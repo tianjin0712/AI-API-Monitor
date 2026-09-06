@@ -76,6 +76,7 @@ export interface RefreshSettings {
 }
 export interface AppBehaviorSettings {
   closeBehavior: "minimize_to_tray" | "quit";
+  rememberCloseBehavior: boolean;
   autoStart: boolean;
 }
 

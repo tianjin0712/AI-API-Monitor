@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "../api";
 import BackgroundCropper from "../components/BackgroundCropper";
 import { PasswordInput } from "../components/ui/Controls";
@@ -35,6 +36,7 @@ import type {
   ProviderConfig,
   RefreshSettings,
   UpdateInfo,
+  AppBehaviorSettings,
 } from "../types";
 
 type FormState = {
@@ -244,7 +246,7 @@ export default function Settings({
     foregroundSecs: 10,
     backgroundSecs: 60,
   });
-  const [appBehavior, setAppBehavior] = useState<{ closeBehavior: "minimize_to_tray" | "quit"; autoStart: boolean }>({ closeBehavior: "minimize_to_tray", autoStart: false });
+  const [appBehavior, setAppBehavior] = useState<AppBehaviorSettings>({ closeBehavior: "minimize_to_tray", rememberCloseBehavior: false, autoStart: false });
   const refreshCodexStatus = useCallback(() => {
     void api.getCodexRuntimeStatus().then((status) => {
       setCodexRuntimeStatus(status);
@@ -334,11 +336,21 @@ export default function Settings({
       .catch(() => {});
   }, [load]);
 
+  useEffect(() => {
+    const unlisten = listen<AppBehaviorSettings>("app-behavior-settings-changed", (event) => setAppBehavior(event.payload));
+    return () => { void unlisten.then((dispose) => dispose()); };
+  }, []);
+
   const changeCloseBehavior = async (value: string) => {
     const closeBehavior = value as "minimize_to_tray" | "quit";
     try {
-      await api.setCloseBehavior(closeBehavior);
-      setAppBehavior((current) => ({ ...current, closeBehavior }));
+      setAppBehavior(await api.setClosePreferences(closeBehavior, appBehavior.rememberCloseBehavior));
+    } catch (e) { setError(String(e)); }
+  };
+
+  const changeRememberCloseBehavior = async (rememberCloseBehavior: boolean) => {
+    try {
+      setAppBehavior(await api.setClosePreferences(appBehavior.closeBehavior, rememberCloseBehavior));
     } catch (e) { setError(String(e)); }
   };
 
@@ -652,6 +664,12 @@ export default function Settings({
             value={appBehavior.closeBehavior}
             options={[{ value: "minimize_to_tray", label: "缩小到托盘" }, { value: "quit", label: "直接退出" }]}
             onChange={(value) => void changeCloseBehavior(value)}
+          />
+          <SwitchPreference
+            title="记住关闭选择"
+            summary={appBehavior.rememberCloseBehavior ? "关闭窗口时直接执行上方操作，不再询问" : "每次关闭窗口时询问如何处理"}
+            checked={appBehavior.rememberCloseBehavior}
+            onChange={(checked) => void changeRememberCloseBehavior(checked)}
           />
           <SwitchPreference
             title="开机自启动"
@@ -1348,7 +1366,7 @@ export default function Settings({
           <h2>关于与更新</h2>
           <p className="section-description">版本信息、更新检查与项目入口。</p>
         </div></div>
-        <p className="mt-2 text-[12px] text-text-secondary">AI API Monitor v0.1.0</p>
+        <p className="mt-2 text-[12px] text-text-secondary">AI API Monitor v1.0.9</p>
         <p className="mt-1 text-[10px] text-text-muted">本软件使用 MiSans 字体。MiSans © Xiaomi Inc.，字体文件按小米官方许可嵌入使用。</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <button

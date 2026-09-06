@@ -208,7 +208,15 @@ select.input option { background: var(--surface-raised); color: var(--color-text
 .provider-picker-option[aria-selected="true"] { background: var(--surface-selected); color: var(--color-accent); font-weight: 650; }
 
 .password-field { position: relative; }
-.password-field-input { padding-right: 42px; }
+.password-field-input {
+  padding-right: 42px;
+  font-family: "MiSans", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-shadow: none !important;
+}
+.password-field-input::placeholder { text-shadow: none !important; }
 .password-field-toggle {
   position: absolute; right: 5px; top: 50%; width: 30px; height: 30px; transform: translateY(-50%);
   display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent;

@@ -1,9 +1,24 @@
 # Changelog
 
+## v1.0.9 - 2026-09-06
+
+- 中文：Windows 点击窗口关闭按钮时新增“关闭软件 / 缩小到系统托盘”选择弹窗，并支持仅本次执行或记住当前选择；取消弹窗不会关闭或隐藏窗口。
+- English: Added a Windows close-action dialog with “Quit” and “Minimize to tray” choices, supporting either one-time execution or remembering the selection; dismissing the dialog leaves the window unchanged.
+- 中文：设置页新增关闭默认行为与“记住关闭选择”配置；设置页与关闭弹窗共用 SQLite 配置并实时同步，关闭记忆后恢复为每次询问。
+- English: Added default close behavior and “Remember close choice” settings. The Settings page and close dialog share the same SQLite preferences and stay synchronized; disabling remembrance restores the prompt on every close.
+- 中文：复用现有 Tauri 正常退出、窗口隐藏、系统托盘与恢复流程；关闭弹窗沿用项目现有 miuix Dialog、Button、Checkbox、主题 token 与 MiSans 字体，macOS 行为保持不变。
+- English: Reused the existing Tauri quit, window hiding, system tray, and restore flows. The dialog uses the existing miuix Dialog, Button, Checkbox, theme tokens, and MiSans font, while macOS behavior remains unchanged.
+- 中文：新增旧版本配置兼容与非法值回退测试；缺少新字段时默认使用“缩小到托盘”且每次询问。
+- English: Added compatibility and invalid-value fallback coverage. Missing preferences default to “Minimize to tray” while continuing to ask on every close.
+
 ## v1.0.8 - 2026-09-06
 
+- 中文：统一 Settings 页 API Key 输入框与 Provider 类型选择框的字体样式；移除刷新策略数字步进箭头的阴影，保留主题色悬停反馈和原有加减行为。
+- English: Unified the Settings API Key input and Provider type selector typography; removed shadows from refresh-policy number stepper arrows while preserving theme hover feedback and increment/decrement behavior.
 - 中文：修复 Windows 发布版启动 Codex `.cmd`/`.bat` 运行时时可能出现的控制台窗口；统一使用无窗口子进程启动方式。
 - English: Fixed console windows that could appear when the Windows release build launched Codex `.cmd`/`.bat` runtimes; all runtime launch paths now use the windowless process configuration.
+- 中文：数据库启动初始化增加 `InitError` 失败步骤与路径诊断，损坏/初始化失败可定位到打开连接、WAL、外键、schema 检查、快照、迁移等具体阶段。
+- English: Database startup initialization now reports an `InitError` with the failing step and path, so corruption/initialization failures can be traced to the specific stage (open connection, WAL, foreign keys, schema check, snapshot, migration, etc.).
 - 中文：修复 Release Workflow 权限与发布步骤，Tag 校验通过后自动构建 NSIS 安装包并创建 GitHub Release。
 - English: Fixed Release Workflow permissions and publishing steps so a validated tag builds the NSIS installer and creates a GitHub Release automatically.
 - 中文：增加构建后 manifest 不可变检查，防止 CI 在 Tag 创建后改写版本。

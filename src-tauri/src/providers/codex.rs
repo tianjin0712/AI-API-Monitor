@@ -18,7 +18,11 @@ use tauri::Emitter;
 
 fn runtime_command(executable: &std::path::Path) -> Command {
     #[cfg(target_os = "windows")]
-    if executable.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat")) {
+    if executable
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat"))
+    {
         let mut command = Command::new("cmd.exe");
         command.args(["/D", "/S", "/C"]).arg(executable);
         return command;

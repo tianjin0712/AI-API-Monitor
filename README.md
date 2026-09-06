@@ -1,6 +1,6 @@
 # AI API Monitor
 
-AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。最近发布基线 Tag 为 `v1.0.8`（Windows 发布版诊断、Codex 子进程窗口与自动发布流程修复），Tag 指向 `chore: release v1.0.8` 发布提交，manifest 版本一致。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
+AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于集中查看多个 AI Provider 的余额、Token、费用、额度窗口与刷新状态。当前开发版本为 `v1.0.9`，新增 Windows 关闭窗口时的退出/托盘选择、记住选择和设置页同步配置。产品成熟度仍按 **V1.0-alpha** 管理：Windows 安装版已完成基础实际验收；数据库恢复 P0、macOS 真机验证、生产签名和自动更新端到端验收尚未完成。
 
 ## 项目简介
 
@@ -23,6 +23,8 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 
 - Dashboard、Settings、ProviderCard、TitleBar、MiniBall、TrendWidget 和统一控件已实现。
 - Miuix/液态玻璃方向已落到 `src/styles/miuix.css`、`miuix-official.css` 和 `src/components/miuix/`：卡片、输入框、下拉框、Button、Switch、Tooltip 与焦点态使用统一 token。
+- 设置页“添加 API 账户”中的 API Key 输入框与 Provider 类型选择框统一使用 MiSans、13px、常规字重和相同行高；密码显示/隐藏逻辑不变。
+- 设置页“刷新策略”的前台/后台数字输入使用无阴影的主题步进箭头；上下箭头仍分别执行 `+1`/`-1`，并保留原有范围、步进、键盘和滚轮行为。
 - Widget 支持排序、显示/隐藏、添加/删除（每类唯一实例），布局 JSON 持久化。
 - 待优化：完整 DIY（自由定位、缩放、透明度、字体/颜色）、真实桌面端触摸/拖动和多屏回归。
 
@@ -87,6 +89,14 @@ AI API Monitor 是一个基于 Tauri 2 的跨平台桌面监控工具，用于�
 - 更完整的日报/周报/月报、成本预测和跨设备配置同步。
 
 ## Changelog
+
+### 2026-09-06
+
+- 优化 Settings 页 API Key 与 Provider 类型选择控件的字体一致性，移除刷新策略数字步进箭头的默认深色阴影并保留主题悬停反馈。
+- 发布 v1.0.8：修复 Windows 发布版启动 Codex `.cmd`/`.bat` 运行时时可能弹出的控制台窗口，统一使用无窗口子进程启动方式。
+- 数据库启动初始化增加 `InitError` 失败步骤与路径诊断，损坏/初始化失败可定位到打开连接、WAL、外键、schema 检查、快照、迁移等具体阶段。
+- 修复 GitHub Release 工作流权限与发布步骤，Tag 校验通过后自动构建 NSIS 安装包并创建 GitHub Release。
+- 增加构建后 manifest 不可变检查，防止 CI 在 Tag 创建后改写版本。
 
 ### 2026-08-23
 

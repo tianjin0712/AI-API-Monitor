@@ -65,7 +65,10 @@ export const api = {
   setRefreshSettings: (foregroundSecs: number, backgroundSecs: number) =>
     invoke<void>("set_refresh_settings", { foregroundSecs, backgroundSecs }),
   getAppBehaviorSettings: () => invoke<AppBehaviorSettings>("get_app_behavior_settings"),
-  setCloseBehavior: (closeBehavior: string) => invoke<void>("set_close_behavior", { closeBehavior }),
+  setClosePreferences: (closeBehavior: AppBehaviorSettings["closeBehavior"], rememberCloseBehavior: boolean) =>
+    invoke<AppBehaviorSettings>("set_close_preferences", { closeBehavior, rememberCloseBehavior }),
+  executeCloseAction: (closeBehavior: AppBehaviorSettings["closeBehavior"], rememberCloseBehavior: boolean) =>
+    invoke<void>("execute_close_action", { closeBehavior, rememberCloseBehavior }),
   setAutoStart: (enabled: boolean) => invoke<boolean>("set_auto_start", { enabled }),
 
   // ---- V0.2 窗口能力 ----

@@ -1,10 +1,10 @@
 # AI API Monitor Windows 发布说明 / Windows Release Guide
 
-## v1.0.8 发布摘要 / Release Summary
+## v1.0.9 发布摘要 / Release Summary
 
-中文：本版本修复 Windows 发布版启动诊断与 Codex 外部运行时的控制台窗口问题，并完善 GitHub Actions 自动创建 Release、上传 NSIS 安装包及版本不可变校验。发布版仍会在真正启动失败时显示明确错误，并将脱敏日志写入用户数据目录。
+中文：本版本为 Windows 新增可配置的窗口关闭行为。点击关闭按钮时，用户可以选择关闭软件或缩小到系统托盘，并决定是否记住选择；设置页可随时修改默认行为或恢复每次询问。新功能复用现有退出与托盘流程，界面保持项目现有 miuix 风格和 MiSans 字体，旧版本用户无需迁移配置即可安全升级。
 
-English: This release fixes Windows console-window behavior when launching the Codex runtime and improves production startup diagnostics. GitHub Actions now validates immutable release metadata, builds the NSIS installer, creates the GitHub Release, and uploads the installer. Genuine startup failures still show a clear error and write a redacted diagnostic log to the user data directory.
+English: This release adds configurable window-close behavior on Windows. Users can choose to quit or minimize to the system tray and decide whether to remember that choice; the Settings page can change the default or restore prompting at any time. The feature reuses the existing quit and tray flows, retains the current miuix styling and MiSans font, and provides backward-compatible defaults with no migration required.
 
 ## 面向用户的下载内容
 
@@ -16,6 +16,8 @@ English: This release fixes Windows console-window behavior when launching the C
 ## Windows 安装验收结果
 
 Windows 安装版已完成实际安装测试。安装后，应用启动、Dashboard、Provider 管理与刷新、主题图片/GIF、托盘、Full/Mini/Ball 窗口模式、设置持久化、开机自启、置顶、拖拽、多显示器与不同 DPI 缩放，以及用户数据隔离均验证可正常使用。Codex Runtime 的后台子进程已验证不会弹出控制台窗口。
+
+Settings 页控件验收要求：API Key 输入框与 Provider 类型选择框的文字必须保持统一字体；刷新策略数字输入只显示简洁主题箭头，不显示自绘或浏览器默认的深色阴影。必须分别验证密码显示/隐藏、上下箭头边界加减，以及键盘输入和滚轮操作。
 
 ## 用户数据与故障排查
 

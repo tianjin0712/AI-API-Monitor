@@ -15,7 +15,7 @@ import {
   readCustomLuotianyiBackground,
 } from "./utils/themeAssets";
 import { applyThemeTokens } from "./theme/applyTheme";
-import { MiuixTheme, NavigationBar, Scaffold } from "./components/miuix/Miuix";
+import { CloseActionDialog, MiuixTheme, NavigationBar, Scaffold } from "./components/miuix/Miuix";
 import { MonitorStoreProvider } from "./state/MonitorStore";
 
 type Page = "dashboard" | "settings";
@@ -28,7 +28,39 @@ const DEFAULT_LAYOUT: Layout = {
 };
 
 export default function App() {
-  return <MonitorStoreProvider><AppShell /></MonitorStoreProvider>;
+  return <MonitorStoreProvider><AppShell /><CloseActionPrompt /></MonitorStoreProvider>;
+}
+
+function CloseActionPrompt() {
+  const [open, setOpen] = useState(false);
+  const [remember, setRemember] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unlisten = listen("close-action-requested", () => {
+      setRemember(false);
+      setError(null);
+      setOpen(true);
+    });
+    return () => { void unlisten.then((dispose) => dispose()); };
+  }, []);
+
+  const choose = async (closeBehavior: "minimize_to_tray" | "quit") => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.executeCloseAction(closeBehavior, remember);
+      setOpen(false);
+    } catch (cause) {
+      setError(`无法执行关闭操作：${String(cause)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <CloseActionDialog open={open} remember={remember} busy={busy} error={error} onRememberChange={setRemember} onChoose={(action) => void choose(action)} onDismiss={() => !busy && setOpen(false)} />;
 }
 
 function AppShell() {

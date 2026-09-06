@@ -12,7 +12,7 @@ use chrono::Utc;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
 
 /// Import image bytes into the isolated application asset directory.
@@ -279,6 +279,7 @@ pub fn get_refresh_settings(db: State<'_, Db>) -> Result<RefreshSettings, AppErr
 #[serde(rename_all = "camelCase")]
 pub struct AppBehaviorSettings {
     pub close_behavior: String,
+    pub remember_close_behavior: bool,
     pub auto_start: bool,
 }
 
@@ -287,25 +288,83 @@ pub fn get_app_behavior_settings(
     app: AppHandle,
     db: State<'_, Db>,
 ) -> Result<AppBehaviorSettings, AppError> {
-    let close_behavior = settings::get_setting(&db, settings::SETTING_CLOSE_BEHAVIOR)?
-        .filter(|value| value == "minimize_to_tray" || value == "quit")
-        .unwrap_or_else(|| "minimize_to_tray".to_string());
+    let (close_behavior, remember_close_behavior) = settings::close_preferences(&db)?;
     let auto_start = app
         .autolaunch()
         .is_enabled()
         .map_err(|e| AppError::Invalid(e.to_string()))?;
     Ok(AppBehaviorSettings {
         close_behavior,
+        remember_close_behavior,
         auto_start,
     })
 }
 
 #[tauri::command]
-pub fn set_close_behavior(db: State<'_, Db>, close_behavior: String) -> Result<(), AppError> {
+pub fn set_close_preferences(
+    app: AppHandle,
+    db: State<'_, Db>,
+    close_behavior: String,
+    remember_close_behavior: bool,
+) -> Result<AppBehaviorSettings, AppError> {
     if close_behavior != "minimize_to_tray" && close_behavior != "quit" {
         return Err(AppError::Invalid("关闭按钮行为无效".into()));
     }
-    settings::set_setting(&db, settings::SETTING_CLOSE_BEHAVIOR, &close_behavior)
+    settings::set_setting(&db, settings::SETTING_CLOSE_BEHAVIOR, &close_behavior)?;
+    settings::set_setting(
+        &db,
+        settings::SETTING_REMEMBER_CLOSE_BEHAVIOR,
+        if remember_close_behavior {
+            "true"
+        } else {
+            "false"
+        },
+    )?;
+    let auto_start = app
+        .autolaunch()
+        .is_enabled()
+        .map_err(|e| AppError::Invalid(e.to_string()))?;
+    let updated = AppBehaviorSettings {
+        close_behavior,
+        remember_close_behavior,
+        auto_start,
+    };
+    let _ = app.emit("app-behavior-settings-changed", &updated);
+    Ok(updated)
+}
+
+#[tauri::command]
+pub fn execute_close_action(
+    app: AppHandle,
+    db: State<'_, Db>,
+    close_behavior: String,
+    remember_close_behavior: bool,
+) -> Result<(), AppError> {
+    if close_behavior != "minimize_to_tray" && close_behavior != "quit" {
+        return Err(AppError::Invalid("关闭按钮行为无效".into()));
+    }
+    if remember_close_behavior {
+        settings::set_setting(&db, settings::SETTING_CLOSE_BEHAVIOR, &close_behavior)?;
+        settings::set_setting(&db, settings::SETTING_REMEMBER_CLOSE_BEHAVIOR, "true")?;
+        if let Ok(auto_start) = app.autolaunch().is_enabled() {
+            let updated = AppBehaviorSettings {
+                close_behavior: close_behavior.clone(),
+                remember_close_behavior: true,
+                auto_start,
+            };
+            let _ = app.emit("app-behavior-settings-changed", updated);
+        }
+    }
+    if close_behavior == "minimize_to_tray" {
+        if let Some(window) = app.get_webview_window(crate::MAIN_WINDOW) {
+            window
+                .hide()
+                .map_err(|e| AppError::Invalid(e.to_string()))?;
+        }
+    } else {
+        app.exit(0);
+    }
+    Ok(())
 }
 
 #[tauri::command]

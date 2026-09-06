@@ -58,6 +58,13 @@ Markdown/                    项目、测试、安全和审查文档
 
 优先复用现有 CSS 变量和组件，不在页面中新增硬编码颜色。修改主题时同时验证暗色、亮色、透明窗口和壁纸背景。
 
+### 设置页输入控件约定
+
+- API Key 使用 `src/components/ui/Controls.tsx` 中的 `PasswordInput`；不得绕过该组件修改加密、存储或提交逻辑。
+- API Key 输入框和 `AppSelect` 的 Provider 类型选择框统一遵循 `src/index.css` 中的 `.input` / `.app-select-trigger` 字体契约：MiSans、13px、常规字重、1.35 行高。
+- 刷新策略的数字输入由 `Settings.tsx` 中的 `NumberStepper` 提供自绘箭头。箭头样式集中在 `.number-stepper-*`，不得恢复浏览器原生 spin button 或添加明显按钮背景、渐变和阴影。
+- 修改步进器样式时必须保留 `min`、`max`、边界禁用、`+1`/`-1`、键盘输入和滚轮操作。
+
 ## 添加 API Provider
 
 1. 在 `src-tauri/src/providers/` 新建适配器，实现 `ProviderAdapter`。

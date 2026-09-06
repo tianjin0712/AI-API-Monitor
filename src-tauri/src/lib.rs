@@ -129,7 +129,8 @@ pub fn run() {
             commands::get_refresh_settings,
             commands::set_refresh_settings,
             commands::get_app_behavior_settings,
-            commands::set_close_behavior,
+            commands::set_close_preferences,
+            commands::execute_close_action,
             commands::set_auto_start,
             commands::set_window_mode,
             commands::set_always_on_top,
@@ -271,13 +272,25 @@ fn switch_window_mode(app: &tauri::AppHandle, mode: crate::window_mode::WindowMo
     }
 }
 
-/// 关闭按钮行为：隐藏到托盘而非退出（V0.2 桌面工具惯例）。
+/// Windows 关闭按钮行为：未记住时交给前端询问，否则直接执行保存的动作。
 fn setup_close_to_tray(app: &tauri::App) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
         let win = window.clone();
         let handle = app.handle().clone();
         window.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(target_os = "windows")]
+                {
+                    let db = handle.state::<Db>();
+                    let remember = crate::settings::close_preferences(&db)
+                        .map(|(_, remember)| remember)
+                        .unwrap_or(false);
+                    if !remember {
+                        api.prevent_close();
+                        let _ = handle.emit("close-action-requested", ());
+                        return;
+                    }
+                }
                 let behavior = handle.state::<Db>();
                 let close_behavior = crate::settings::get_setting(
                     &behavior,

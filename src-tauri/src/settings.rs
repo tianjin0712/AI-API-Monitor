@@ -18,7 +18,19 @@ pub const SETTING_LAYOUT: &str = "ui.layout";
 pub const SETTING_TELEMETRY_ENABLED: &str = "privacy.telemetryEnabled";
 pub const SETTING_APPROVED_CUSTOM_ORIGINS: &str = "network.approvedCustomOrigins";
 pub const SETTING_CLOSE_BEHAVIOR: &str = "app.closeBehavior";
+pub const SETTING_REMEMBER_CLOSE_BEHAVIOR: &str = "app.rememberCloseBehavior";
 pub const SETTING_DATABASE_RECOVERY_NOTICE: &str = "database.recoveryNotice";
+
+pub const DEFAULT_CLOSE_BEHAVIOR: &str = "minimize_to_tray";
+
+pub fn close_preferences(db: &Db) -> Result<(String, bool), AppError> {
+    let close_behavior = get_setting(db, SETTING_CLOSE_BEHAVIOR)?
+        .filter(|value| value == "minimize_to_tray" || value == "quit")
+        .unwrap_or_else(|| DEFAULT_CLOSE_BEHAVIOR.to_string());
+    let remember_close_behavior =
+        get_setting(db, SETTING_REMEMBER_CLOSE_BEHAVIOR)?.is_some_and(|value| value == "true");
+    Ok((close_behavior, remember_close_behavior))
+}
 
 /// 应用层错误，统一映射为前端可读信息。
 #[derive(Debug, thiserror::Error)]
@@ -758,5 +770,31 @@ mod security_tests {
         assert!(is_custom_endpoint_approved(&db, endpoint).unwrap());
         assert!(is_custom_endpoint_approved(&db, "https://gateway.example.com/v2").unwrap());
         assert!(!is_custom_endpoint_approved(&db, "https://other.example.com/v1").unwrap());
+    }
+
+    #[test]
+    fn close_preferences_are_backward_compatible_and_independent() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch("CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+            .unwrap();
+        let db = Db {
+            conn: std::sync::Mutex::new(connection),
+            recovery_notice: None,
+        };
+
+        assert_eq!(
+            close_preferences(&db).unwrap(),
+            (DEFAULT_CLOSE_BEHAVIOR.to_string(), false)
+        );
+        set_setting(&db, SETTING_CLOSE_BEHAVIOR, "quit").unwrap();
+        assert_eq!(close_preferences(&db).unwrap(), ("quit".to_string(), false));
+        set_setting(&db, SETTING_REMEMBER_CLOSE_BEHAVIOR, "true").unwrap();
+        assert_eq!(close_preferences(&db).unwrap(), ("quit".to_string(), true));
+        set_setting(&db, SETTING_CLOSE_BEHAVIOR, "legacy-invalid-value").unwrap();
+        assert_eq!(
+            close_preferences(&db).unwrap(),
+            (DEFAULT_CLOSE_BEHAVIOR.to_string(), true)
+        );
     }
 }
