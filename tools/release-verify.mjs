@@ -60,8 +60,11 @@ let tagObject;
 tagObject = tryGit(["cat-file", "-t", `refs/tags/${tag}`]);
 
 if (requireTag) {
-  if (tagObject !== "tag") {
+  if (!tagObject) {
     fail(`缺少 annotated tag ${tag}。`);
+  }
+  if (tagObject !== "tag") {
+    fail(`${tag} 是 lightweight tag；请删除后使用 git tag -a 创建 annotated tag。`);
   }
   if (git(["rev-list", "-n", "1", tag]) !== head) {
     fail(`${tag} 没有指向当前 release commit。`);
