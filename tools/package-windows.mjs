@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Windows 打包脚本（仅 Windows / NSIS）。
+// Windows 打包脚本（NSIS + MSI）。
 //
 // 目标：
 // 1. 打包时自动根据当前 Git Tag 派生版本（不硬编码）：
@@ -25,6 +25,7 @@ const PRODUCT_NAME = "AI API Monitor";
 const ARCH = "x64";
 // tauri build（NSIS target）的固定输出目录。
 const NSIS_DIR = join(root, "src-tauri", "target", "release", "bundle", "nsis");
+const MSI_DIR = join(root, "src-tauri", "target", "release", "bundle", "msi");
 
 function tryGit(args) {
   try {
@@ -71,6 +72,10 @@ export function finalArtifactName(version) {
   return `${PRODUCT_NAME}_${ARCH}-setup_${sanitizeFileName(version)}.exe`;
 }
 
+export function finalMsiName(version) {
+  return `${PRODUCT_NAME}_${ARCH}_${sanitizeFileName(version)}.msi`;
+}
+
 function fail(message) {
   console.error(`✗ ${message}`);
   process.exit(1);
@@ -88,8 +93,8 @@ function runPackage() {
     console.log(`[package-windows] 已同步 manifest 版本：${changes.join(", ")}`);
   }
 
-  console.log("[package-windows] 开始 tauri build（Windows / NSIS）…");
-  execFileSync("pnpm", ["tauri", "build"], {
+  console.log("[package-windows] 开始 tauri build（Windows / NSIS + MSI）…");
+  execFileSync("pnpm", ["tauri", "build", "--bundles", "nsis,msi"], {
     cwd: root,
     stdio: "inherit",
     // Windows 上 pnpm 是 .cmd/.ps1，需要 shell 解析；其他平台直接执行。
@@ -107,7 +112,18 @@ function runPackage() {
   const from = join(NSIS_DIR, setupFile);
   const to = join(NSIS_DIR, target);
   renameSync(from, to);
-  console.log(`[package-windows] 最终产物：${to}`);
+
+  if (!existsSync(MSI_DIR)) {
+    fail(`未找到 MSI 产物目录：${MSI_DIR}`);
+  }
+  const msiFile = readdirSync(MSI_DIR).find((name) => name.endsWith(".msi"));
+  if (!msiFile) {
+    fail(`未在 ${MSI_DIR} 找到 MSI 安装包。`);
+  }
+  const msiTarget = join(MSI_DIR, finalMsiName(version));
+  renameSync(join(MSI_DIR, msiFile), msiTarget);
+  console.log(`[package-windows] NSIS 产物：${to}`);
+  console.log(`[package-windows] MSI 产物：${msiTarget}`);
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];

@@ -9,7 +9,8 @@ English: This release adds configurable window-close behavior on Windows. Users 
 ## 面向用户的下载内容
 
 - **安装版（推荐）**：`AI API Monitor_x64-setup_<version>.exe`（版本名位于文件名末尾）。双击后按向导安装；采用当前用户安装，不需要管理员权限，也不会显示开发终端。
-- **便携版**：`AI-API-Monitor-portable.zip`。解压后双击 `AI API Monitor.exe`；首次运行仍需要 Windows WebView2 Runtime（Windows 11 通常已内置）。便携版的数据仍按 Windows 用户保存在应用数据目录，不会写入解压目录。
+- **MSI 安装版**：`AI API Monitor_x64_<version>.msi`，适合需要 Windows Installer 部署的环境。
+- **便携版**：`AI-API-Monitor-portable_<version>.zip`。解压后双击 `AI API Monitor.exe`；首次运行仍需要 Windows WebView2 Runtime（Windows 11 通常已内置）。便携版的数据仍按 Windows 用户保存在应用数据目录，不会写入解压目录。
 
 两种版本都已经内置应用 EXE、前端页面、JavaScript 依赖、Rust 依赖、SQLite 引擎、字体、主题图片和 GIF。用户不需要安装 Node.js、pnpm、Rust、Cargo、Python、Git 或项目源码。
 
@@ -67,7 +68,8 @@ git push origin vX.Y.Z
 ```text
 release/
 ├─ AI API Monitor_x64-setup_<version>.exe
-├─ AI-API-Monitor-portable.zip
+├─ AI API Monitor_x64_<version>.msi
+├─ AI-API-Monitor-portable_<version>.zip
 └─ AI-API-Monitor-portable/
    ├─ AI API Monitor.exe
    └─ RELEASE.md
