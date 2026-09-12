@@ -46,7 +46,7 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "windows")]
             {
-                let event = single_instance.event;
+                let event = single_instance.activation_event();
                 app.manage(single_instance);
                 let handle = app.handle().clone();
                 std::thread::spawn(move || loop {
