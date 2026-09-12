@@ -6,6 +6,7 @@ mod platform_security;
 mod providers;
 mod security;
 mod settings;
+mod single_instance;
 mod storage;
 mod subprocess;
 mod window_mode;
@@ -26,6 +27,12 @@ pub const MAIN_WINDOW: &str = "main";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    let single_instance = match single_instance::acquire() {
+        single_instance::Acquire::Primary(guard) => guard,
+        single_instance::Acquire::Secondary => return,
+    };
+
     if let Err(error) = tauri::Builder::default()
         .register_uri_scheme_protocol("app-resource", |context, request| {
             assets::protocol_response(context.app_handle(), request)
@@ -36,7 +43,17 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .setup(|app| {
+        .setup(move |app| {
+            #[cfg(target_os = "windows")]
+            {
+                let event = single_instance.event;
+                app.manage(single_instance);
+                let handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    single_instance::wait_for_activation(event);
+                    activate_existing_window(&handle);
+                });
+            }
             // 初始化 SQLite 数据库（app data 目录）
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
@@ -148,6 +165,21 @@ pub fn run() {
         .run(tauri::generate_context!())
     {
         report_startup_failure(&error.to_string());
+    }
+}
+
+fn activate_existing_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    let visible = window.is_visible().unwrap_or(false);
+    let focused = window.is_focused().unwrap_or(false);
+    if !visible || window.is_minimized().unwrap_or(false) || !focused {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        let _ = app.emit("single-instance-attention", ());
     }
 }
 

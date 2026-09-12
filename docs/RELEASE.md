@@ -59,6 +59,7 @@ git push origin vX.Y.Z
 除上述手动流程外，仓库还提供两个一键打包脚本，均以 Git Tag 为版本来源、注入 manifest 并完成构建：
 
 - **Windows**：`scripts/Build-Release.ps1`，解析版本、执行 `pnpm check`、构建安装包与便携版（构建失败自动重试），产物输出到 `release/`。
+- **Windows 双击脚本**：`scripts/Build-Release.bat`，直接传入版本号即可构建 NSIS EXE、MSI 和 portable ZIP，例如 `scripts\\Build-Release.bat 1.0.11`；添加 `-SkipChecks` 可跳过质量检查。
 - **macOS**：`scripts/Build-Release.sh`，构建 `.app` 与 `.dmg`（默认输出到 `~/release`），产物文件名末尾追加版本号；macOS 无法交叉编译 Windows 产物。
 
 不要在旧 manifest 上打 Tag，也不要在打 Tag 后补改版本。若 `pnpm release:verify` 失败，应修复或重新提交 release commit；不要移动或重写已发布 Tag。

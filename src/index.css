@@ -1066,3 +1066,17 @@ html[data-visual-theme="luotianyi"] .provider-picker-menu {
 .btn-danger-ghost:hover:not(:disabled) {
   background: rgba(248, 113, 113, 0.1);
 }
+html.single-instance-attention::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  border: 2px solid rgba(91, 156, 255, 0.9);
+  animation: single-instance-attention 700ms ease-out;
+}
+
+@keyframes single-instance-attention {
+  0%, 100% { opacity: 0; }
+  25%, 65% { opacity: 1; }
+}

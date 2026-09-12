@@ -88,6 +88,23 @@ function AppShell() {
   }, [layout]);
 
   useEffect(() => {
+    let timer: number | undefined;
+    const unlisten = listen("single-instance-attention", () => {
+      document.documentElement.classList.remove("single-instance-attention");
+      void document.documentElement.offsetWidth;
+      document.documentElement.classList.add("single-instance-attention");
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        document.documentElement.classList.remove("single-instance-attention");
+      }, 700);
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+      window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     void Promise.all([migrateLegacyBackground(), migrateLegacyAvatarGif()]).then(() => {
       setCustomBackground(readCustomBackground());
       window.dispatchEvent(new Event(BACKGROUND_EVENT));
