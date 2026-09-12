@@ -16,18 +16,37 @@ use std::process::{Child, Command, Stdio};
 use std::{thread, time::Duration};
 use tauri::Emitter;
 
-fn runtime_command(executable: &std::path::Path) -> Command {
-    #[cfg(target_os = "windows")]
-    if executable
+/// 是否为 Windows 批处理脚本（`.cmd` / `.bat`）。
+#[cfg(target_os = "windows")]
+fn is_windows_script(executable: &std::path::Path) -> bool {
+    executable
         .extension()
         .and_then(|value| value.to_str())
         .is_some_and(|value| value.eq_ignore_ascii_case("cmd") || value.eq_ignore_ascii_case("bat"))
-    {
-        let mut command = Command::new("cmd.exe");
-        command.args(["/D", "/S", "/C"]).arg(executable);
-        return command;
-    }
-    Command::new(executable)
+}
+
+/// 非 Windows 平台不存在「经由 cmd.exe 执行批处理」的需求。
+#[cfg(not(target_os = "windows"))]
+fn is_windows_script(_executable: &std::path::Path) -> bool {
+    false
+}
+
+/// 构造 Codex Runtime 启动命令。
+///
+/// 返回的 `Command` **已经**应用了 Windows「无控制台窗口」标志（见 [`crate::subprocess`]）。
+/// 抑制逻辑只保留在这一处：调用方无需、也不应再自行设置，这样将来新增启动点时
+/// 不可能漏掉抑制——历史上反复出现的空白控制台弹窗，正是新增启动点漏设所致。
+fn runtime_command(executable: &std::path::Path) -> Command {
+    let mut command = if is_windows_script(executable) {
+        // `.cmd` / `.bat` 必须经由 cmd.exe 执行；/D 跳过 AutoRun，/S /C 规范引号解析。
+        let mut cmd = Command::new("cmd.exe");
+        cmd.args(["/D", "/S", "/C"]).arg(executable);
+        cmd
+    } else {
+        Command::new(executable)
+    };
+    subprocess::spawn_without_window(&mut command);
+    command
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -107,7 +126,6 @@ pub fn runtime_status() -> CodexRuntimeStatus {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        subprocess::spawn_without_window(&mut command);
         let logged_in = command
             .status()
             .map(|status| status.success())
@@ -141,7 +159,6 @@ pub fn start_login() -> Result<(), ProviderError> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    subprocess::spawn_without_window(&mut command);
     command
         .spawn()
         .map(|_| ())
@@ -163,7 +180,6 @@ pub fn start_rate_limit_monitor(app: tauri::AppHandle) {
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::null());
-                subprocess::spawn_without_window(&mut command);
                 let Ok(mut child) = command.spawn() else {
                     continue;
                 };
@@ -371,7 +387,6 @@ fn fetch_from_runtime(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    subprocess::spawn_without_window(&mut command);
     let mut child = command
         .spawn()
         .map_err(|_| ProviderError::Api("无法启动 Codex Runtime".into()))?;
